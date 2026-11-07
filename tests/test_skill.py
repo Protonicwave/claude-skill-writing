@@ -4,6 +4,8 @@ from pathlib import Path
 import pytest
 from check import Format, Severity, find_issues
 
+from install import is_shipped
+
 SKILL_DIR = Path(__file__).resolve().parent.parent / "writing"
 SKILL_TEXT = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
 # Limits from the skill format: claude.ai rejects a skill that exceeds them.
@@ -30,7 +32,7 @@ def shipped_files() -> set[str]:
         path.relative_to(SKILL_DIR).as_posix()
         for path in SKILL_DIR.rglob("*")
         if path.is_file()
-        and "__pycache__" not in path.parts
+        and is_shipped(path.relative_to(SKILL_DIR))
         and path.name != "SKILL.md"
     }
 

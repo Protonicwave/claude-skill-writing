@@ -1,4 +1,5 @@
 import re
+import sys
 import zipfile
 from pathlib import Path
 
@@ -137,3 +138,69 @@ def test_main_refuses_a_source_that_is_not_the_skill(tmp_path: Path) -> None:
 
     assert code == 1
     assert not (tmp_path / "skills").exists()
+
+
+@pytest.mark.parametrize(
+    ("skill_md", "accepted"),
+    [
+        ('---\nname: "writing"\n---\n', True),
+        ("---\nname: 'writing'\n---\n", True),
+        ("---\nname:\nwriting\n---\n", False),
+    ],
+)
+def test_source_name_is_read_as_one_frontmatter_line(
+    tmp_path: Path, skill_md: str, accepted: bool
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "SKILL.md").write_text(skill_md, encoding="utf-8")
+
+    if accepted:
+        install_skill(source, tmp_path / "skills")
+    else:
+        with pytest.raises(FileNotFoundError):
+            install_skill(source, tmp_path / "skills")
+
+
+def test_refuses_a_target_that_is_a_link(tmp_path: Path) -> None:
+    source = make_skill(tmp_path)
+    checkout = make_skill(tmp_path / "checkout")
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    try:
+        (skills / SKILL_NAME).symlink_to(checkout, target_is_directory=True)
+    except OSError:
+        # Windows refuses symlinks without a privilege; a junction is the
+        # link an unprivileged Windows user would make instead.
+        if sys.platform != "win32":
+            raise
+        import _winapi  # Windows-only module, imported where used
+
+        _winapi.CreateJunction(str(checkout), str(skills / SKILL_NAME))
+
+    with pytest.raises(FileExistsError, match="link"):
+        install_skill(source, skills)
+
+    assert (checkout / "SKILL.md").is_file()
+
+
+def test_main_reports_a_filesystem_failure(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = make_skill(tmp_path)
+    blocked = tmp_path / "dist"
+    blocked.write_text("a file where the folder should be\n", encoding="utf-8")
+
+    code = main(
+        [
+            "--source",
+            str(source),
+            "--skills-dir",
+            str(tmp_path / "skills"),
+            "--dist",
+            str(blocked),
+        ]
+    )
+
+    assert code == 1
+    assert str(blocked) in capsys.readouterr().err
