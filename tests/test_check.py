@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 import pytest
@@ -277,3 +278,80 @@ def test_cli_format_flag_overrides_extension(tmp_path: Path) -> None:
     draft.write_text("The fit failed---badly.", encoding="utf-8")
     assert main([str(draft)]) == 0
     assert main([str(draft), "--format", "latex"]) == 1
+
+
+@pytest.mark.parametrize(
+    ("text", "fmt"),
+    [
+        ("The gap is $E - V$ at the edge.", Format.MARKDOWN),
+        ("The force is m a - k x here.", Format.PLAIN),
+        ("\\begin{alignat}{2}\nx &= a - b\n\\end{alignat}", Format.LATEX),
+        ("\\begin{flalign}\nx &= a - b\n\\end{flalign}", Format.LATEX),
+        ("where $E\n- V$ is the gap.", Format.LATEX),
+        ("As an AI researcher, I study alignment.", Format.PLAIN),
+        ("GPT-2 was trained as a language model on WebText.", Format.PLAIN),
+        ("The model has a knowledge cutoff of 2023.", Format.PLAIN),
+    ],
+)
+def test_legitimate_physics_and_computing_prose_has_no_errors(
+    text: str, fmt: Format
+) -> None:
+    assert not [i for i in find_issues(text, fmt) if i.severity is Severity.ERROR]
+
+
+def test_latex_line_break_with_spacing_does_not_hide_prose() -> None:
+    text = f"First line\\\\[6pt]\nSecond line{EM_DASH}with a dash.\n\n\\[ x = 1 \\]"
+    assert "dash" in rules(text, Format.LATEX)
+
+
+def test_latex_heading_label_is_not_prose() -> None:
+    assert rules("\\section{Results}\\label{sec:fiber}", Format.LATEX) == set()
+
+
+@pytest.mark.parametrize(
+    ("text", "rule"),
+    [
+        ("The polarizability rose.", "us-spelling"),
+        ("An organizational change.", "us-spelling"),
+        ("The vapor pressure fell.", "us-spelling"),
+        ("A favorable result.", "us-spelling"),
+        ("A colorful plot.", "us-spelling"),
+        ("Done \u2714 and fast \u26a1.", "emoji"),
+        ("Made in \U0001f1ec\U0001f1e7.", "emoji"),
+        ("The gain saturates [citation needed].", "unresolved-marker"),
+    ],
+)
+def test_review_false_negatives_are_caught(text: str, rule: str) -> None:
+    assert rule in rules(text)
+
+
+@pytest.mark.parametrize(
+    ("text", "fmt"),
+    [
+        ("The dose was 2 gray.", Format.PLAIN),
+        ("An outsize load.", Format.PLAIN),
+        ("The assizes met.", Format.PLAIN),
+        ("They stand as independents.", Format.PLAIN),
+        ("See [the guide](https://example.com/color-guide).", Format.MARKDOWN),
+        ("See https://example.com/color-guide for details.", Format.PLAIN),
+    ],
+)
+def test_review_false_positives_are_spared(text: str, fmt: Format) -> None:
+    assert rules(text, fmt) == set()
+
+
+def test_one_phrase_gets_one_issue() -> None:
+    issues = find_issues("Temperature plays a crucial role in annealing.", Format.PLAIN)
+    assert [i.rule for i in issues] == ["stock-phrase"]
+
+
+def test_long_paragraph_is_checked_in_linear_time() -> None:
+    start = time.perf_counter()
+    find_issues("color\n" * 12000, Format.PLAIN)
+    assert time.perf_counter() - start < 2.0
+
+
+def test_repeated_latex_line_breaks_are_checked_quickly() -> None:
+    start = time.perf_counter()
+    find_issues("\\\\[2pt] word " * 16000, Format.LATEX)
+    assert time.perf_counter() - start < 2.0

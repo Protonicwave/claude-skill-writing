@@ -23,6 +23,7 @@ import sys
 from bisect import bisect_right
 from dataclasses import dataclass
 from enum import StrEnum
+from itertools import accumulate
 from pathlib import Path
 from typing import Literal
 
@@ -87,13 +88,11 @@ class Paragraph:
     def text(self) -> str:
         return " ".join(line.text for line in self.lines)
 
-    def line_at(self, offset: int) -> int:
-        starts: list[int] = []
-        position = 0
-        for line in self.lines:
-            starts.append(position)
-            position += len(line.text) + 1
-        return self.lines[bisect_right(starts, offset) - 1].number
+    def line_starts(self) -> list[int]:
+        """Offset in `text` at which each line begins."""
+        return list(
+            accumulate((len(line.text) + 1 for line in self.lines[:-1]), initial=0)
+        )
 
 
 def _rule(
@@ -104,6 +103,13 @@ def _rule(
 
 ERR, WARN, NOCASE = Severity.ERROR, Severity.WARNING, re.IGNORECASE
 DASH_FIX = "use a comma, colon, brackets or a full stop"
+# Two letters either side: a dash joins words, while "m a - k x" is algebra.
+SPACED_HYPHEN = _rule(
+    "dash",
+    ERR,
+    r"(?<=[A-Za-z]{2})\s+-\s+(?=[A-Za-z]{2})",
+    f"spaced hyphen used as a dash: {DASH_FIX}",
+)
 
 DASH_RULES: dict[Format, tuple[PatternRule, ...]] = {
     Format.PLAIN: (
@@ -116,12 +122,7 @@ DASH_RULES: dict[Format, tuple[PatternRule, ...]] = {
             r"\s\u2013|\u2013\s",
             f"en dash used as punctuation: {DASH_FIX}",
         ),
-        _rule(
-            "dash",
-            ERR,
-            r"(?<=[A-Za-z)])\s+-\s+(?=[A-Za-z(])",
-            f"spaced hyphen used as a dash: {DASH_FIX}",
-        ),
+        SPACED_HYPHEN,
     ),
     Format.LATEX: (
         _rule("dash", ERR, "\u2014|(?<!-)---(?!-)", f"em dash: {DASH_FIX}"),
@@ -131,12 +132,7 @@ DASH_RULES: dict[Format, tuple[PatternRule, ...]] = {
             r"\s\u2013|\u2013\s|\s--(?!-)|(?<!-)--\s",
             f"en dash used as punctuation: {DASH_FIX}",
         ),
-        _rule(
-            "dash",
-            ERR,
-            r"(?<=[A-Za-z)])\s+-\s+(?=[A-Za-z(])",
-            f"spaced hyphen used as a dash: {DASH_FIX}",
-        ),
+        SPACED_HYPHEN,
     ),
 }
 DASH_RULES[Format.MARKDOWN] = DASH_RULES[Format.PLAIN]
@@ -163,7 +159,7 @@ STOCK_PHRASES = (
     r"|it (?:should|must) be noted"
     r"|play(?:s|ed|ing)? an? (?:crucial|key|vital|pivotal|significant|important|central"
     r"|essential|critical) role"
-    r"|(?:serves?|served|serving|stands?|stood) as|a testament to"
+    r"|(?:serves?|served|serving) as|(?:stands?|stood) as an?\b|a testament to"
     r"|navigat\w* the complexit\w*|deep dive|in today(?:'s|\u2019s)|ever-evolving"
     r"|paradigm shift|despite these challenges|(?:has|have|had) emerged as"
     r"|not (?:just|only|merely|simply)\b[^.?!]{1,80}?\bbut\b"
@@ -181,32 +177,32 @@ CONNECTIVE_OPENERS = (
 )
 US_WORDS = (
     r"colors?|colored|coloring|behaviors?|behavioral|favors?|favored|favorite|honors?"
-    r"|neighbors?|neighboring|labors?|centers?|centered|centering|fibers?|aluminum|gray"
+    # Not gray: it is also the SI unit of absorbed dose.
+    r"|neighbors?|neighboring|labors?|centers?|centered|centering|fibers?|aluminum"
+    r"|vapors?|colorful|favorable|favorably"
     r"|modeling|modeled|labeled|labeling|traveled|traveling|canceled|canceling|signaling"
     r"|signaled|fueled|fueling|catalogs?|defense|skeptical|artifacts?"
 )
 
+# Where two matches cover the same words, the rule listed first wins, so the
+# specific phrase rules come before the single-word vocabulary rule.
 PROSE_RULES: tuple[PatternRule, ...] = (
     _rule(
         "emoji",
         ERR,
-        "[\U0001f300-\U0001faff\u2705\u2728\u274c\u2b50]",
+        "[\U0001f300-\U0001faff\U0001f1e6-\U0001f1ff\u2705\u2714\u2728\u274c\u2764"
+        "\u26a1\u2b50]",
         "emoji in prose",
     ),
     _rule(
         "chatbot",
         ERR,
-        r"\bI hope this helps\b|\bas an AI\b|\bas a (?:large )?language model\b"
-        r"|\bgreat question\b|\bcertainly!|\bI(?:'d|\u2019d| would) be happy to help\b"
-        r"|\bknowledge cut-?off\b",
+        # The trailing comma separates the chatbot's self-description from
+        # "as an AI researcher" or "trained as a language model".
+        r"\bI hope this helps\b|\bas an AI(?: language model)?,|\bas a (?:large )?"
+        r"language model,|\bgreat question\b|\bcertainly!"
+        r"|\bI(?:'d|\u2019d| would) be happy to help\b",
         "chatbot phrase '{hit}': delete it",
-        flags=NOCASE,
-    ),
-    _rule(
-        "vocabulary",
-        WARN,
-        rf"\b(?:{DECORATIVE_WORDS})\b",
-        "decorative word '{hit}': say the specific thing instead",
         flags=NOCASE,
     ),
     _rule(
@@ -222,6 +218,13 @@ PROSE_RULES: tuple[PatternRule, ...] = (
         WARN,
         rf"\b(?:{STOCK_PHRASES})\b",
         "stock phrase '{hit}': state the point directly",
+        flags=NOCASE,
+    ),
+    _rule(
+        "vocabulary",
+        WARN,
+        rf"\b(?:{DECORATIVE_WORDS})\b",
+        "decorative word '{hit}': say the specific thing instead",
         flags=NOCASE,
     ),
     _rule(
@@ -242,8 +245,8 @@ PROSE_RULES: tuple[PatternRule, ...] = (
         "us-spelling",
         WARN,
         # Words built on size, prize and seize are spelt with z in UK English too.
-        r"\b(?!(?:re|over|under|down|up)?(?:si|pri|sei|capsi|mai|bai)z)\w*(?:iz|yz)"
-        r"(?:e|es|ed|er|ers|ing|ation|ations|able)\b"
+        r"\b(?!(?:re|over|under|down|up|out)?(?:si|pri|sei|capsi|mai|bai|assi)z)"
+        r"\w*(?:iz|yz)(?:e|es|ed|er|ers|ing|ation|ations|ational|able|ability)\b"
         rf"|\b(?:{US_WORDS})\b",
         "US spelling '{hit}': use the UK form",
         flags=NOCASE,
@@ -253,6 +256,7 @@ PROSE_RULES: tuple[PatternRule, ...] = (
         WARN,
         r"\[(?:UNVERIFIED|CITATION NEEDED|CLAIM NOT CHECKED|DATA NEEDED)[^\]]*\]",
         "unresolved marker '{hit}': verify the source or cut the claim",
+        flags=NOCASE,
     ),
 )
 MARKDOWN_RULES: tuple[PatternRule, ...] = (
@@ -297,19 +301,21 @@ def _blank_keeping_lines(match: re.Match[str]) -> str:
 
 
 LATEX_BLOCK = re.compile(
-    r"\\begin\{(equation|align|gather|multline|eqnarray|displaymath|math|tabular|tikzpicture"
-    r"|verbatim|lstlisting|minted)\*?\}.*?\\end\{\1\*?\}"
-    r"|\\\[.*?\\\]|\$\$.*?\$\$",
+    r"\\begin\{(equation|align|alignat|flalign|gather|multline|eqnarray|displaymath"
+    r"|math|tabular|tabularx|tikzpicture|verbatim|lstlisting|minted)\*?\}.*?\\end\{\1\*?\}"
+    # A display opens with \[ but a line break with spacing is \\[6pt].
+    r"|(?<!\\)\\\[.*?\\\]|\$\$.*?\$\$",
     re.DOTALL,
 )
 LATEX_COMMENT = re.compile(r"(?<!\\)%.*")
-LATEX_INLINE_MATHS = re.compile(r"(?<!\\)\$[^$]*(?<!\\)\$|\\\(.*?\\\)")
+# Inline maths may wrap onto the next line of the source.
+LATEX_INLINE_MATHS = re.compile(r"(?<!\\)\$[^$]*(?<!\\)\$|\\\(.*?\\\)", re.DOTALL)
 LATEX_DROPPED_COMMAND = re.compile(
     r"\\(?:cite\w*|ref|eqref|autoref|[cC]ref|label|includegraphics|url|input|include|bibliography"
     r"|bibliographystyle|usepackage|documentclass|begin|end|[hv]space)\*?(?:\[[^\]]*\])*\{[^}]*\}"
 )
 LATEX_HEADING = re.compile(
-    r"^\s*\\(?:part|chapter|(?:sub){0,2}section|paragraph)\*?\{(.*)\}\s*$"
+    r"^\s*\\(?:part|chapter|(?:sub){0,2}section|paragraph)\*?\{([^{}]*)\}"
 )
 LATEX_ITEM = re.compile(r"^\s*\\item\b(?:\[[^\]]*\])?")
 LATEX_COMMAND = re.compile(r"\\[A-Za-z]+\*?(?:\[[^\]]*\])?")
@@ -317,6 +323,9 @@ LATEX_COMMAND = re.compile(r"\\[A-Za-z]+\*?(?:\[[^\]]*\])?")
 MARKDOWN_FENCE = re.compile(r"^\s*(```|~~~).*?^\s*\1[^\n]*$", re.DOTALL | re.MULTILINE)
 MARKDOWN_INLINE_CODE = re.compile(r"`[^`\n]*`")
 MARKDOWN_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+MARKDOWN_MATHS = re.compile(r"\$\$.*?\$\$|(?<!\\)\$[^$\n]+?(?<!\\)\$", re.DOTALL)
+MARKDOWN_LINK_TARGET = re.compile(r"\]\([^)\s]*\)")
+URL = re.compile(r"https?://\S+")
 MARKDOWN_HEADING = re.compile(r"^\s*#{1,6}\s+")
 MARKDOWN_SKIPPED_LINE = re.compile(r"^\s*(?:\||(?:-{3,}|\*{3,}|_{3,})\s*$)")
 LIST_MARKER = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
@@ -324,17 +333,16 @@ QUOTE_MARKER = re.compile(r"^\s*>\s?")
 
 
 def _latex_line(number: int, raw: str) -> ProseLine:
-    line = LATEX_INLINE_MATHS.sub(" ", LATEX_COMMENT.sub("", raw))
-    if heading := LATEX_HEADING.match(line):
+    if heading := LATEX_HEADING.match(raw):
         return ProseLine(number, heading.group(1), "heading")
-    kind: LineKind = "item" if LATEX_ITEM.match(line) else "text"
-    line = LATEX_DROPPED_COMMAND.sub(" ", LATEX_ITEM.sub("", line))
+    kind: LineKind = "item" if LATEX_ITEM.match(raw) else "text"
+    line = LATEX_DROPPED_COMMAND.sub(" ", LATEX_ITEM.sub("", raw))
     line = LATEX_COMMAND.sub("", line).replace("~", " ").replace("\\%", "%")
     return ProseLine(number, re.sub(r"[{}]", "", line).strip(), kind)
 
 
 def _markdown_line(number: int, raw: str) -> ProseLine:
-    line = MARKDOWN_INLINE_CODE.sub(" ", raw)
+    line = MARKDOWN_LINK_TARGET.sub("]", MARKDOWN_INLINE_CODE.sub(" ", raw))
     if MARKDOWN_SKIPPED_LINE.match(line):
         return ProseLine(number, "", "text")
     if MARKDOWN_HEADING.match(line):
@@ -344,18 +352,23 @@ def _markdown_line(number: int, raw: str) -> ProseLine:
 
 def _plain_line(number: int, raw: str) -> ProseLine:
     kind: LineKind = "item" if LIST_MARKER.match(raw) else "text"
-    return ProseLine(number, LIST_MARKER.sub("", raw).strip(), kind)
+    return ProseLine(number, URL.sub(" ", LIST_MARKER.sub("", raw)).strip(), kind)
+
+
+def _strip_spans(text: str, *patterns: re.Pattern[str]) -> str:
+    for pattern in patterns:
+        text = pattern.sub(_blank_keeping_lines, text)
+    return text
 
 
 def prose_lines(text: str, fmt: Format) -> list[ProseLine]:
     """Every line of the draft with markup removed, numbered from 1."""
     if fmt is Format.LATEX:
-        text = LATEX_BLOCK.sub(_blank_keeping_lines, text)
+        # Comments go first, so a $ inside one cannot pair with a later $.
+        text = _strip_spans(text, LATEX_COMMENT, LATEX_BLOCK, LATEX_INLINE_MATHS)
         to_prose = _latex_line
     elif fmt is Format.MARKDOWN:
-        text = MARKDOWN_COMMENT.sub(
-            _blank_keeping_lines, MARKDOWN_FENCE.sub(_blank_keeping_lines, text)
-        )
+        text = _strip_spans(text, MARKDOWN_FENCE, MARKDOWN_COMMENT, MARKDOWN_MATHS)
         to_prose = _markdown_line
     else:
         to_prose = _plain_line
@@ -381,20 +394,25 @@ def paragraphs(lines: list[ProseLine]) -> list[Paragraph]:
 def _pattern_issues(
     paragraph: Paragraph, rules: tuple[PatternRule, ...]
 ) -> list[Issue]:
+    """One issue per span of text: a match inside an earlier, wider or
+    higher-ranked match is the same fault reported twice, so it is dropped."""
     text = paragraph.text
-    issues = []
-    for rule in rules:
+    starts = paragraph.line_starts()
+    found = []
+    for rank, rule in enumerate(rules):
         group: str | int = "hit" if "hit" in rule.pattern.groupindex else 0
         for match in rule.pattern.finditer(text):
-            line = paragraph.line_at(match.start(group))
-            issues.append(
-                Issue(
-                    line,
-                    rule.name,
-                    rule.severity,
-                    rule.message.format(hit=match.group(group).strip()),
-                )
-            )
+            hit = match.group(group)
+            found.append((match.start(group), -match.end(group), rank, rule, hit))
+    issues = []
+    covered_until = -1
+    for start, negative_end, _, rule, hit in sorted(found, key=lambda f: f[:3]):
+        if -negative_end <= covered_until:
+            continue
+        covered_until = -negative_end
+        line = paragraph.lines[bisect_right(starts, start) - 1].number
+        message = rule.message.format(hit=hit.strip())
+        issues.append(Issue(line, rule.name, rule.severity, message))
     return issues
 
 
@@ -430,7 +448,7 @@ def _document_rhythm_issue(body: list[Paragraph]) -> Issue | None:
         return None
     message = (
         f"sentence length barely varies across {len(sentences)} sentences "
-        f"(mean {mean:.0f} words, spread {spread:.2f}; admired prose sits above 0.45)"
+        f"(mean {mean:.0f} words, spread {spread:.2f}; admired prose sits above 0.46)"
     )
     return Issue(body[0].lines[0].number, "document-rhythm", WARN, message)
 
