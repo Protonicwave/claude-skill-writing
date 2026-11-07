@@ -28,7 +28,7 @@ max-complexity = 10
 
 [tool.mypy]
 strict = true
-files = ["writing/scripts", "install.py", "tests"]
+files = ["writing/scripts", "tests"]
 mypy_path = ["writing/scripts", "."]
 
 [tool.pytest.ini_options]
