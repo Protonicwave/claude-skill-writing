@@ -77,6 +77,8 @@ def test_markdown_list_marker_is_not_a_dash() -> None:
         ("The beam hit the center of the camera.", "us-spelling"),
         ("The gain saturates [UNVERIFIED].", "unresolved-marker"),
         ("The gain saturates [CITATION NEEDED: saturation].", "unresolved-marker"),
+        ("The gain saturates [CLAIM NOT CHECKED: paywalled].", "unresolved-marker"),
+        ("The threshold was [DATA NEEDED: threshold power] W.", "unresolved-marker"),
     ],
 )
 def test_warning_rules_flag_their_pattern(text: str, rule: str) -> None:

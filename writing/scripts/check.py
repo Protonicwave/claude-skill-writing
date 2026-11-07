@@ -251,7 +251,7 @@ PROSE_RULES: tuple[PatternRule, ...] = (
     _rule(
         "unresolved-marker",
         WARN,
-        r"\[(?:UNVERIFIED|CITATION NEEDED)[^\]]*\]",
+        r"\[(?:UNVERIFIED|CITATION NEEDED|CLAIM NOT CHECKED|DATA NEEDED)[^\]]*\]",
         "unresolved marker '{hit}': verify the source or cut the claim",
     ),
 )
