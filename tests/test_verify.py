@@ -256,7 +256,6 @@ def test_parse_sources_rejects_unreadable_text_file(tmp_path: Path) -> None:
 def test_parse_sources_accepts_numeric_volume_and_skips_blank_lines() -> None:
     (source,) = parse_sources("\n" + json.dumps(entry(volume=21)) + "\n\n", Path())
     assert source.volume == "21"
-    assert source.line == 2
 
 
 @pytest.mark.parametrize("argv", [["missing.jsonl"], ["bad.jsonl"]])

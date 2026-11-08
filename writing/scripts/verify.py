@@ -241,7 +241,6 @@ class Evidence:
 
 @dataclass(frozen=True, slots=True)
 class CitedSource:
-    line: int
     key: str
     identifier: Identifier
     title: str
@@ -261,7 +260,7 @@ def parse_sources(text: str, base_dir: Path) -> list[CitedSource]:
         if not line.strip():
             continue
         try:
-            source = _parse_source(line, number, base_dir)
+            source = _parse_source(line, base_dir)
         except ValueError as err:
             raise ValueError(f"line {number}: {err}") from err
         if source.key in keys:
@@ -278,13 +277,12 @@ def parse_sources(text: str, base_dir: Path) -> list[CitedSource]:
     return parsed
 
 
-def _parse_source(line: str, number: int, base_dir: Path) -> CitedSource:
+def _parse_source(line: str, base_dir: Path) -> CitedSource:
     entry = json.loads(line)
     if not isinstance(entry, dict):
         raise ValueError(f"expected an object, got {type(entry).__name__}")
     authors, has_more = _authors(entry.get("authors"))
     return CitedSource(
-        line=number,
         key=_required_text(entry, "key"),
         identifier=parse_identifier(_required_text(entry, "id")),
         title=_required_text(entry, "title"),
