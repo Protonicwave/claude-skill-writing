@@ -6,8 +6,9 @@ A skill for Claude that writes and edits prose people read (reports, dissertatio
 
 - `writing/`: the skill itself. `SKILL.md` routes each request to a register in `writing/registers/` and points to the shared rules (`tells.md`, `clarity.md`, `sources.md`, `exemplars.md`).
 - `writing/scripts/check.py`: the draft checker, standard library only.
+- `writing/scripts/verify.py`: the source verifier, standard library only.
 - `install.py`: installs the skill and builds the upload zip.
-- `tests/`: checker rules, skill structure and installer.
+- `tests/`: checker rules, verifier, skill structure and installer.
 
 ## Install
 
@@ -34,6 +35,15 @@ python writing/scripts/check.py - < message.txt
 ```
 
 The format follows the extension (`.md`, `.tex`, anything else plain) unless `--format` is given. It exits 1 if any error is found, 2 if the draft cannot be read, and 0 otherwise. Errors (dashes used as punctuation, emoji, chatbot phrases) must be fixed. Warnings need judgement: physics uses some flagged words, such as potential or robust, in their technical sense.
+
+The verifier checks cited papers against Crossref, OpenAlex and arXiv:
+
+```
+python writing/scripts/verify.py sources.jsonl > references-log.md
+python writing/scripts/verify.py - < sources.jsonl
+```
+
+Each input line is one source as the draft cites it: a key, a DOI or arXiv ID, the title, the authors' surnames, the year, optionally volume and pages, and the quoted passages each claim rests on. `writing/sources.md` gives the format. For each source it compares the cited fields with the registry record, looks for retractions and newer arXiv versions, and searches the abstract (or a saved full text) for each quote word for word. It prints the verification log as a Markdown table and exits 1 unless every source is verified, or 2 if the input cannot be read. It needs network access and checks at most 50 sources per run.
 
 ## Development
 
