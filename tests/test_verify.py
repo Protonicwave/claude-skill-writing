@@ -199,6 +199,9 @@ def outcomes(verification: Verification) -> dict[str, Outcome]:
         ("https://arxiv.org/abs/1706.03762v1", ArxivId("1706.03762", 1)),
         ("https://arxiv.org/pdf/1706.03762", ArxivId("1706.03762", None)),
         ("hep-th/9711200", ArxivId("hep-th/9711200", None)),
+        ("math.GT/0309136", ArxivId("math.GT/0309136", None)),
+        ("arXiv:math.gt/0309136v2", ArxivId("math.GT/0309136", 2)),
+        ("https://arxiv.org/abs/1706.03762/", ArxivId("1706.03762", None)),
         ("10.48550/arXiv.1706.03762", ArxivId("1706.03762", None)),
     ],
 )
@@ -512,6 +515,16 @@ def test_quote_found_in_saved_html_text(tmp_path: Path) -> None:
     assert verification.claims[0].found_in == "saved text paper.html"
 
 
+def test_saved_html_with_unclosed_head_is_still_searched(tmp_path: Path) -> None:
+    page = "<html><head><title>t</title><body><p>Results show a 3.2 K shift in Tc</p>"
+    (tmp_path / "paper.html").write_text(page, encoding="utf-8")
+    evidence = [
+        {"claim": "x", "quote": "Results show a 3.2 K shift", "text": "paper.html"}
+    ]
+    (source,) = sources(entry(evidence=evidence), base_dir=tmp_path)
+    assert verify(source, doi_registry()).claims[0].found_in == "saved text paper.html"
+
+
 def test_script_text_in_saved_html_is_not_searched(tmp_path: Path) -> None:
     page = (
         "<script>var s = 'Results show a 3.2 K shift in the critical';</script><p>x</p>"
@@ -604,6 +617,26 @@ def test_arxiv_withdrawn_paper_is_retracted() -> None:
     )
     verification = check_arxiv({}, FakeRegistry([("id_list=1706.03762", feed)]))
     assert verification.status is Status.RETRACTED
+
+
+@pytest.mark.parametrize(
+    ("comment", "status"),
+    [
+        ("Withdrawn: duplicate of arXiv:1601.00001", Status.RETRACTED),
+        ("This submission has been withdrawn by arXiv admin", Status.RETRACTED),
+        ("Supersedes the withdrawn preprint arXiv:1601.00001", Status.VERIFIED),
+    ],
+)
+def test_arxiv_withdrawal_is_read_from_the_comment_not_any_mention(
+    comment: str, status: Status
+) -> None:
+    feed = atom(
+        version=2,
+        summary=ATTENTION_V7,
+        extras=f"<arxiv:comment>{comment}</arxiv:comment>",
+    )
+    verification = check_arxiv({}, FakeRegistry([("id_list=1706.03762", feed)]))
+    assert verification.status is status
 
 
 def test_arxiv_missing_identifier_is_unverified() -> None:

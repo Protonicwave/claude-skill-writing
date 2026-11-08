@@ -86,9 +86,13 @@ _ARXIV_PREFIX = re.compile(
     re.IGNORECASE,
 )
 _ARXIV = re.compile(
-    r"^(?P<base>\d{4}\.\d{4,5}|[a-z-]+(?:\.[a-z]{2})?/\d{7})(?:v(?P<version>\d+))?$",
+    r"^(?:(?P<new>\d{4}\.\d{4,5})"
+    r"|(?P<archive>[a-z-]+)(?:\.(?P<subject>[a-z]{2}))?/(?P<number>\d{7}))"
+    r"(?:v(?P<version>\d+))?$",
     re.IGNORECASE,
 )
+# arXiv's own wording when a paper is withdrawn, not any comment mentioning one.
+_WITHDRAWN = re.compile(r"^\s*withdrawn\b|\b(?:has been|is|was) withdrawn\b", re.I)
 _ARXIV_VERSION = re.compile(r"v(\d+)$")
 _WHITESPACE = re.compile(r"\s+")
 # "p." or "pp." before a page; a bare letter is part of an article number (P04005).
@@ -139,13 +143,21 @@ def parse_identifier(raw: str) -> Identifier:
     doi = _DOI_PREFIX.sub("", text).lower()
     if doi.startswith(ARXIV_DOI_PREFIX):
         text = doi.removeprefix(ARXIV_DOI_PREFIX)
-    arxiv = _ARXIV.match(_ARXIV_PREFIX.sub("", text).removesuffix(".pdf"))
+    arxiv = _ARXIV.match(_ARXIV_PREFIX.sub("", text).rstrip("/").removesuffix(".pdf"))
     if arxiv:
         version = arxiv["version"]
-        return ArxivId(arxiv["base"].lower(), int(version) if version else None)
+        return ArxivId(_arxiv_base(arxiv), int(version) if version else None)
     if _DOI.match(doi):
         return Doi(doi)
     raise ValueError(f"expected a DOI or arXiv identifier, got {raw!r}")
+
+
+def _arxiv_base(match: re.Match[str]) -> str:
+    """The identifier as arXiv writes it: `math.GT/0309136`, archive lower case."""
+    if match["new"]:
+        return match["new"]
+    subject = f".{match['subject'].upper()}" if match["subject"] else ""
+    return f"{match['archive'].lower()}{subject}/{match['number']}"
 
 
 def identifier_label(identifier: Identifier) -> str:
@@ -160,7 +172,8 @@ def identifier_label(identifier: Identifier) -> str:
 class _VisibleText(HTMLParser):
     """The text a reader sees in HTML or JATS markup, without scripts or styles."""
 
-    _HIDDEN = frozenset({"script", "style", "noscript", "head", "template"})
+    # Not "head": its end tag is optional, so an unclosed one would hide the page.
+    _HIDDEN = frozenset({"script", "style", "noscript", "template"})
     _BLOCKS = frozenset(
         {
             "p",
@@ -718,7 +731,7 @@ def _arxiv_record(url: str, cited: _ArxivEntry, latest: _ArxivEntry) -> Record:
     if published:
         version += f"; published as {published}, cite that version"
     notices: tuple[Notice, ...] = ()
-    if "withdrawn" in latest.comment.casefold():
+    if _WITHDRAWN.search(latest.comment):
         notices = (
             Notice("withdrawn", True, f"arXiv v{latest.version}: {latest.comment}"),
         )
