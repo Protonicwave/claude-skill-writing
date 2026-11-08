@@ -977,6 +977,11 @@ def main(argv: list[str] | None = None) -> int:
         "sources", help="JSON Lines file of cited sources, or - for standard input"
     )
     args = parser.parse_args(argv)
+    # Sources and logs are UTF-8 files; a Windows console defaults to a legacy
+    # code page that would garble names on the way in and out.
+    for stream in (sys.stdin, sys.stdout):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding="utf-8")
     try:
         text, base_dir = _read_input(args.sources)
         sources = parse_sources(text, base_dir)
@@ -984,9 +989,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"cannot verify {args.sources}: {err}", file=sys.stderr)
         return 2
 
-    # A console on a legacy code page cannot print every character a title may contain.
-    if isinstance(sys.stdout, io.TextIOWrapper):
-        sys.stdout.reconfigure(errors="backslashreplace")
     client = RegistryClient()
     verifications = [verify(source, client) for source in sources]
     sys.stdout.write(render_log(verifications, date.today()))

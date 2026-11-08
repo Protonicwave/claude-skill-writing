@@ -1,9 +1,12 @@
+import io
 import json
+import sys
 from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 
 import pytest
+import verify as verify_module
 from verify import (
     ArxivId,
     CitedSource,
@@ -594,3 +597,24 @@ def test_log_has_one_row_per_source_and_escapes_pipes() -> None:
     assert "A \\| B" in rows[0]
     assert "2026-11-08" in rows[0]
     assert "1 of 2 sources verified" in log
+
+
+# Command line
+
+
+def test_main_reads_and_writes_utf8_whatever_the_console_code_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    line = json.dumps(entry(authors=["Schr\u00f6dinger"]), ensure_ascii=False)
+    stdin = io.TextIOWrapper(io.BytesIO(line.encode()), encoding="cp1252")
+    written = io.BytesIO()
+    stdout = io.TextIOWrapper(written, encoding="cp1252")
+    registry = doi_registry(crossref(author=families("Schr\u00f6dinger")))
+    monkeypatch.setattr(sys, "stdin", stdin)
+    monkeypatch.setattr(sys, "stdout", stdout)
+    monkeypatch.setattr(verify_module, "RegistryClient", lambda: registry)
+    assert main(["-"]) == 0
+    stdout.flush()
+    log = written.getvalue().decode("utf-8")
+    assert "Schr\u00f6dinger" in log
+    assert "| VERIFIED |" in log
