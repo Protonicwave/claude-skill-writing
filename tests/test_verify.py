@@ -250,9 +250,54 @@ def test_parse_sources_rejects_bad_input(text: str, message: str) -> None:
 
 
 def test_parse_sources_rejects_more_than_the_limit() -> None:
-    lines = [json.dumps(entry(key=f"k{n}")) for n in range(51)]
+    lines = [json.dumps(entry(key=f"k{n}", id=f"10.1000/k{n}")) for n in range(51)]
     with pytest.raises(ValueError, match="more than 50"):
         parse_sources("\n".join(lines), Path())
+
+
+@pytest.mark.parametrize(
+    ("name", "message"),
+    [
+        ("../outside.txt", "inside the folder"),
+        ("paper.pdf", "PDF"),
+    ],
+)
+def test_parse_sources_rejects_text_files_it_cannot_search(
+    name: str, message: str, tmp_path: Path
+) -> None:
+    folder = tmp_path / "draft"
+    folder.mkdir()
+    (tmp_path / "outside.txt").write_text(FEYNMAN_QUOTE, encoding="utf-8")
+    (folder / "paper.pdf").write_bytes(b"%PDF-1.7")
+    evidence = [{"claim": "x", "quote": FEYNMAN_QUOTE, "text": name}]
+    with pytest.raises(ValueError, match=message):
+        sources(entry(evidence=evidence), base_dir=folder)
+
+
+def test_parse_sources_bounds_the_total_saved_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in ("a.txt", "b.txt"):
+        (tmp_path / name).write_text(FEYNMAN_QUOTE, encoding="utf-8")
+    monkeypatch.setattr(verify_module, "MAX_SAVED_TEXT_BYTES", 60)
+    evidence = [
+        {"claim": "x", "quote": FEYNMAN_QUOTE, "text": name}
+        for name in ("a.txt", "a.txt")
+    ]
+    sources(entry(evidence=evidence), base_dir=tmp_path)
+    evidence[1]["text"] = "b.txt"
+    with pytest.raises(ValueError, match="saved texts"):
+        sources(entry(evidence=evidence), base_dir=tmp_path)
+
+
+def test_parse_sources_rejects_one_work_cited_under_two_keys() -> None:
+    text = (
+        json.dumps(entry())
+        + chr(10)
+        + json.dumps(entry(key="Other", id="doi:10.1007/bf02650179"))
+    )
+    with pytest.raises(ValueError, match=r"line 2: .*also cited as Feynman1982"):
+        parse_sources(text, Path())
 
 
 def test_parse_sources_rejects_unreadable_text_file(tmp_path: Path) -> None:
@@ -747,3 +792,16 @@ def test_main_exits_3_on_a_fault_and_keeps_rows_already_written(
     captured = capsys.readouterr()
     assert "| Feynman1982 |" in captured.out
     assert "Second" in captured.err
+
+
+def test_main_stops_checking_at_the_run_time_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "sources.jsonl").write_text(json.dumps(entry()), encoding="utf-8")
+    registry = doi_registry()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(verify_module, "RegistryClient", lambda: registry)
+    monkeypatch.setattr(verify_module, "MAX_RUN_SECONDS", -1)
+    assert main(["sources.jsonl"]) == 1
+    assert registry.requested == []
+    assert "run time limit" in capsys.readouterr().out

@@ -11,14 +11,17 @@ Each line of the input is one source as the draft cites it:
      "year": 1982, "volume": "21", "pages": "467-488",
      "evidence": [{"claim": "...", "quote": "...", "text": "feynman.html"}]}
 
-`id` is a DOI or an arXiv identifier in any usual form. `authors` lists
-surnames in order; a final "et al." stands for the rest. `volume` and `pages`
-are optional. Each quote must appear word for word in the registry abstract
-or, when `text` names one, in a saved copy of the full text (plain text or
-HTML, relative to the input file).
+`id` is a DOI registered with Crossref or an arXiv identifier, in any usual
+form. `authors` lists surnames in order; a final "et al." stands for the
+rest, and an empty list cites a work with no personal authors. `volume` and
+`pages` are optional. Each quote must appear word for word in the registry
+abstract or, when `text` names one, in a saved copy of the full text: plain
+text or HTML, inside the input file's folder (the current folder for
+standard input).
 
-Prints the verification log as a Markdown table. Exits 0 if every source is
-verified, 1 if any is not, 2 if the input cannot be read or is invalid.
+Prints the verification log as a Markdown table, a row as each source is
+checked. Exits 0 if every source is verified, 1 if any is not, 2 if the
+input cannot be read or is invalid, and 3 if the run stops on a fault.
 """
 
 from __future__ import annotations
@@ -51,6 +54,10 @@ MAX_EVIDENCE_PER_SOURCE = 20
 MIN_QUOTE_CHARACTERS = 20
 MAX_QUOTE_CHARACTERS = 2000
 MAX_TEXT_FILE_BYTES = 20 * 1024 * 1024
+MAX_SAVED_TEXT_BYTES = 100 * 1024 * 1024
+# Sources not reached in this time are reported unverified, so a run always
+# finishes inside a 10-minute command timeout with every row it checked.
+MAX_RUN_SECONDS = 300.0
 MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 30.0
 MAX_ATTEMPTS = 3
@@ -270,19 +277,22 @@ class CitedSource:
 
 
 def parse_sources(text: str, base_dir: Path) -> list[CitedSource]:
-    """Parse JSON Lines of cited sources. Raises ValueError naming the line."""
+    """Parse JSON Lines of cited sources. Raises ValueError naming the line.
+
+    Saved texts are read relative to `base_dir` and must lie inside it.
+    """
     parsed: list[CitedSource] = []
-    keys: set[str] = set()
+    keys_by_identifier: dict[Identifier, str] = {}
+    saved_texts = _SavedTexts(base_dir)
     for number, line in enumerate(text.splitlines(), start=1):
         if not line.strip():
             continue
         try:
-            source = _parse_source(line, base_dir)
+            source = _parse_source(line, saved_texts)
+            _check_unique(source, parsed, keys_by_identifier)
         except ValueError as err:
             raise ValueError(f"line {number}: {err}") from err
-        if source.key in keys:
-            raise ValueError(f"line {number}: duplicate key {source.key!r}")
-        keys.add(source.key)
+        keys_by_identifier[source.identifier] = source.key
         parsed.append(source)
         if len(parsed) > MAX_SOURCES:
             raise ValueError(
@@ -294,7 +304,21 @@ def parse_sources(text: str, base_dir: Path) -> list[CitedSource]:
     return parsed
 
 
-def _parse_source(line: str, base_dir: Path) -> CitedSource:
+def _check_unique(
+    source: CitedSource,
+    parsed: Sequence[CitedSource],
+    keys_by_identifier: dict[Identifier, str],
+) -> None:
+    if any(earlier.key == source.key for earlier in parsed):
+        raise ValueError(f"duplicate key {source.key!r}")
+    if source.identifier in keys_by_identifier:
+        raise ValueError(
+            f"{identifier_label(source.identifier)} is also cited as "
+            f"{keys_by_identifier[source.identifier]}"
+        )
+
+
+def _parse_source(line: str, saved_texts: _SavedTexts) -> CitedSource:
     entry = _load_json(line)
     if not isinstance(entry, dict):
         raise ValueError(f"expected an object, got {type(entry).__name__}")
@@ -308,7 +332,7 @@ def _parse_source(line: str, base_dir: Path) -> CitedSource:
         year=_year(entry.get("year")),
         volume=_optional_text(entry, "volume"),
         pages=_optional_text(entry, "pages"),
-        evidence=_evidence(entry.get("evidence"), base_dir),
+        evidence=_evidence(entry.get("evidence"), saved_texts),
     )
 
 
@@ -353,7 +377,7 @@ def _authors(value: object) -> tuple[tuple[str, ...], bool]:
     return surnames, has_more
 
 
-def _evidence(value: object, base_dir: Path) -> tuple[Evidence, ...]:
+def _evidence(value: object, saved_texts: _SavedTexts) -> tuple[Evidence, ...]:
     if not isinstance(value, list) or not 1 <= len(value) <= MAX_EVIDENCE_PER_SOURCE:
         raise ValueError(
             f"field 'evidence' must list 1 to {MAX_EVIDENCE_PER_SOURCE} claims"
@@ -369,23 +393,47 @@ def _evidence(value: object, base_dir: Path) -> tuple[Evidence, ...]:
                 f"{MAX_QUOTE_CHARACTERS} characters, got {len(quote)}"
             )
         text_name = _optional_text(item, "text")
-        saved = None if text_name is None else _read_saved_text(base_dir / text_name)
+        saved = None if text_name is None else saved_texts.read(text_name)
         items.append(Evidence(_required_text(item, "claim"), quote, text_name, saved))
     return tuple(items)
 
 
-def _read_saved_text(path: Path) -> str:
-    try:
-        if path.stat().st_size > MAX_TEXT_FILE_BYTES:
+class _SavedTexts:
+    """Saved full texts, each read once, inside one folder, within a total size."""
+
+    def __init__(self, folder: Path) -> None:
+        self._folder = folder.resolve()
+        self._texts: dict[Path, str] = {}
+        self._total_bytes = 0
+
+    def read(self, name: str) -> str:
+        path = (self._folder / name).resolve()
+        if not path.is_relative_to(self._folder):
             raise ValueError(
-                f"text file {path.name} is over {MAX_TEXT_FILE_BYTES} bytes"
+                f"text file {name} must be inside the folder {self._folder}"
             )
-        raw = path.read_text(encoding="utf-8", errors="replace")
-    except OSError as err:
-        raise ValueError(f"cannot read text file {path.name}: {err.strerror}") from err
-    if path.suffix.lower() in {".html", ".htm", ".xhtml"}:
-        raw = visible_text(raw)
-    return normalise_passage(raw)
+        if path.suffix.lower() == ".pdf":
+            raise ValueError(f"text file {name} is a PDF; save the HTML or a text copy")
+        if path not in self._texts:
+            self._texts[path] = self._load(path, name)
+        return self._texts[path]
+
+    def _load(self, path: Path, name: str) -> str:
+        try:
+            size_bytes = path.stat().st_size
+            if size_bytes > MAX_TEXT_FILE_BYTES:
+                raise ValueError(
+                    f"text file {name} is over {MAX_TEXT_FILE_BYTES} bytes"
+                )
+            self._total_bytes += size_bytes
+            if self._total_bytes > MAX_SAVED_TEXT_BYTES:
+                raise ValueError(f"saved texts total over {MAX_SAVED_TEXT_BYTES} bytes")
+            raw = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as err:
+            raise ValueError(f"cannot read text file {name}: {err.strerror}") from err
+        if path.suffix.lower() in {".html", ".htm", ".xhtml"}:
+            raw = visible_text(raw)
+        return normalise_passage(raw)
 
 
 # Registry access
@@ -806,18 +854,7 @@ class Verification:
 def verify(source: CitedSource, fetch: Fetch) -> Verification:
     lookup = look_up(source.identifier, fetch)
     if isinstance(lookup, Missing):
-        return Verification(
-            source,
-            Status.UNVERIFIED,
-            lookup.query_url,
-            lookup.reason,
-            "",
-            "",
-            (),
-            (),
-            (),
-            "not checked",
-        )
+        return unchecked(source, lookup.query_url, lookup.reason)
     fields = compare_fields(source, lookup)
     claims = tuple(
         ClaimCheck(evidence.claim, _find_quote(evidence, lookup))
@@ -834,6 +871,13 @@ def verify(source: CitedSource, fetch: Fetch) -> Verification:
         claims,
         lookup.notices,
         lookup.retraction_checked,
+    )
+
+
+def unchecked(source: CitedSource, query_url: str, reason: str) -> Verification:
+    """A source no record was compared with, and why."""
+    return Verification(
+        source, Status.UNVERIFIED, query_url, reason, "", "", (), (), (), "not checked"
     )
 
 
@@ -1059,9 +1103,17 @@ def main(argv: list[str] | None = None) -> int:
     retrieved = date.today()
     verifications: list[Verification] = []
     print(LOG_HEADER, flush=True)
+    deadline = time.monotonic() + MAX_RUN_SECONDS
     for source in sources:
         try:
-            verification = verify(source, client)
+            if time.monotonic() > deadline:
+                verification = unchecked(
+                    source,
+                    "",
+                    f"run time limit of {MAX_RUN_SECONDS:.0f} s reached; rerun",
+                )
+            else:
+                verification = verify(source, client)
         except Exception as err:
             # The process boundary: an unforeseen fault is reported once, and
             # the rows already printed stay valid.
