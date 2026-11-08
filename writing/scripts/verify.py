@@ -91,6 +91,8 @@ _ARXIV = re.compile(
 )
 _ARXIV_VERSION = re.compile(r"v(\d+)$")
 _WHITESPACE = re.compile(r"\s+")
+# "p." or "pp." before a page; a bare letter is part of an article number (P04005).
+_PAGE_PREFIX = re.compile(r"^\s*pp?(?:\.\s*|\s+)", re.IGNORECASE)
 _NON_WORD = re.compile(r"[\W_]+")
 _TYPOGRAPHY = str.maketrans(
     {
@@ -225,7 +227,7 @@ def normalise_passage(text: str) -> str:
 
 def _comparable(text: str) -> str:
     """Text as titles and names are compared: case, accents and punctuation dropped."""
-    decomposed = unicodedata.normalize("NFKD", visible_text(text))
+    decomposed = unicodedata.normalize("NFKD", text)
     letters = "".join(c for c in decomposed if not unicodedata.combining(c))
     return _NON_WORD.sub(" ", letters.casefold()).strip()
 
@@ -329,11 +331,12 @@ def _authors(value: object) -> tuple[tuple[str, ...], bool]:
         isinstance(name, str) and name.strip() for name in value
     ):
         raise ValueError("field 'authors' must be a list of surnames")
+    # An empty list cites a work with no personal authors, such as an editorial.
     names = [name.strip() for name in value]
     has_more = bool(names) and bool(_ET_AL.match(names[-1]))
     surnames = tuple(names[:-1] if has_more else names)
-    if not surnames:
-        raise ValueError("field 'authors' must name at least one author")
+    if has_more and not surnames:
+        raise ValueError("field 'authors' must name an author before 'et al.'")
     return surnames, has_more
 
 
@@ -829,15 +832,22 @@ def compare_fields(source: CitedSource, record: Record) -> tuple[FieldCheck, ...
         _check_optional("volume", source.volume, record.volume),
         _check_optional(
             "first page",
-            source.pages.split("-")[0].strip() if source.pages else None,
+            _first_page(source.pages) if source.pages else None,
             record.first_page,
         ),
     )
 
 
+def _first_page(pages: str) -> str:
+    """The first page of a range as cited: `pp. 467-488` gives `467`."""
+    return normalise_passage(_PAGE_PREFIX.sub("", pages)).split("-")[0].strip()
+
+
 def _check_title(cited: str, titles: tuple[str, ...]) -> FieldCheck:
+    # Registry titles carry markup and entities; the cited title is plain text.
     wanted = _comparable(cited)
-    if any(_comparable(_RETRACTED_TITLE_PREFIX.sub("", t)) == wanted for t in titles):
+    recorded = (_RETRACTED_TITLE_PREFIX.sub("", visible_text(t)) for t in titles)
+    if any(_comparable(title) == wanted for title in recorded):
         return FieldCheck("title", Outcome.MATCH, "")
     return FieldCheck("title", Outcome.MISMATCH, f"record has {titles[0]!r}")
 
@@ -964,7 +974,8 @@ def _cited_as(source: CitedSource) -> str:
         )
         if part
     )
-    return f"{authors}, {source.title} ({source.year})" + (
+    byline = f"{authors}, " if authors else ""
+    return f"{byline}{source.title} ({source.year})" + (
         f", {details}" if details else ""
     )
 

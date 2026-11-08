@@ -226,7 +226,7 @@ def test_parse_identifier_rejects_other_text(raw: str) -> None:
         (json.dumps({k: v for k, v in entry().items() if k != "year"}), "'year'"),
         (json.dumps(entry(year="1982")), "'year'"),
         (json.dumps(entry(year=True)), "'year'"),
-        (json.dumps(entry(authors=[])), "'authors'"),
+        (json.dumps(entry(authors="Feynman")), "'authors'"),
         (json.dumps(entry(authors=["et al."])), "'authors'"),
         (json.dumps(entry(evidence=[])), "'evidence'"),
         (json.dumps(entry(id="Feynman 1982")), "DOI or arXiv"),
@@ -338,6 +338,36 @@ def test_article_number_stands_in_for_first_page() -> None:
     work = crossref(page=None, **{"article-number": "061102"})
     verification = check({"pages": "061102"}, doi_registry(work))
     assert outcomes(verification)["first page"] is Outcome.MATCH
+
+
+@pytest.mark.parametrize(
+    "pages", [f"467{chr(0x2013)}488", "pp. 467-488", "p 467", "467"]
+)
+def test_first_page_is_read_from_any_usual_page_range(pages: str) -> None:
+    verification = check({"pages": pages}, doi_registry())
+    assert outcomes(verification)["first page"] is Outcome.MATCH
+
+
+def test_article_number_with_a_letter_prefix_is_kept_whole() -> None:
+    work = crossref(page=None, **{"article-number": "P04005"})
+    verification = check({"pages": "P04005"}, doi_registry(work))
+    assert outcomes(verification)["first page"] is Outcome.MATCH
+
+
+def test_angle_brackets_in_a_cited_title_are_text_not_markup() -> None:
+    work = crossref(title=["Proof that a&lt;b and b&gt;c"])
+    verification = check({"title": "Proof that a<b and b>c"}, doi_registry(work))
+    assert outcomes(verification)["title"] is Outcome.MATCH
+
+
+def test_work_without_authors_matches_an_empty_author_list() -> None:
+    verification = check({"authors": []}, doi_registry(crossref(author=None)))
+    assert outcomes(verification)["authors"] is Outcome.MATCH
+
+
+def test_empty_author_list_is_a_mismatch_when_the_record_has_authors() -> None:
+    verification = check({"authors": []}, doi_registry())
+    assert outcomes(verification)["authors"] is Outcome.MISMATCH
 
 
 def test_unstated_volume_and_pages_are_not_held_against_the_source() -> None:
