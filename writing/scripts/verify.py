@@ -94,7 +94,7 @@ _ARXIV_PREFIX = re.compile(
 )
 _ARXIV = re.compile(
     r"^(?:(?P<new>\d{4}\.\d{4,5})"
-    r"|(?P<archive>[a-z-]+)(?:\.(?P<subject>[a-z]{2}))?/(?P<number>\d{7}))"
+    r"|(?P<archive>[a-z-]+)(?:\.[a-z-]+)?/(?P<number>\d{7}))"
     r"(?:v(?P<version>\d+))?$",
     re.IGNORECASE,
 )
@@ -160,11 +160,14 @@ def parse_identifier(raw: str) -> Identifier:
 
 
 def _arxiv_base(match: re.Match[str]) -> str:
-    """The identifier as arXiv writes it: `math.GT/0309136`, archive lower case."""
+    """The identifier as the arXiv API knows it.
+
+    An old-style identifier may carry a subject class (`math.DG/0211159`),
+    but the API answers only to the archive and number (`math/0211159`).
+    """
     if match["new"]:
         return match["new"]
-    subject = f".{match['subject'].upper()}" if match["subject"] else ""
-    return f"{match['archive'].lower()}{subject}/{match['number']}"
+    return f"{match['archive'].lower()}/{match['number']}"
 
 
 def identifier_label(identifier: Identifier) -> str:
