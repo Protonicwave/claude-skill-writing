@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 import verify as verify_module
 from verify import (
+    LOG_HEADER,
     ArxivId,
     CitedSource,
     Fetch,
@@ -15,10 +16,11 @@ from verify import (
     RegistryUnavailableError,
     Status,
     Verification,
+    log_row,
+    log_summary,
     main,
     parse_identifier,
     parse_sources,
-    render_log,
     verify,
 )
 
@@ -395,6 +397,35 @@ def test_openalex_outage_is_recorded_and_not_fatal() -> None:
     assert "OpenAlex unavailable" in verification.retraction_checked
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        b'{"message": "oops"}',
+        b"[1, 2]",
+        b"[" * 100_000 + b"]" * 100_000,
+    ],
+    ids=["message-not-object", "not-object", "deeply-nested"],
+)
+def test_unexpected_crossref_shape_is_unverified(body: bytes) -> None:
+    verification = check({}, FakeRegistry([("api.crossref.org", body)]))
+    assert verification.status is Status.UNVERIFIED
+    assert "Crossref returned" in verification.reason
+
+
+def test_malformed_record_fields_are_skipped_not_fatal() -> None:
+    work = crossref(
+        issued={"date-parts": [[None]]},
+        author={"family": "Feynman"},
+        **{
+            "published-print": {"date-parts": [[1982, 6]]},
+            "updated-by": [{"type": "correction", "updated": "x"}, "junk"],
+        },
+    )
+    verification = check({}, doi_registry(work))
+    assert outcomes(verification)["year"] is Outcome.MATCH
+    assert [notice.kind for notice in verification.notices] == ["correction"]
+
+
 # Quoted passages
 
 
@@ -572,6 +603,14 @@ def test_arxiv_authors_match_on_surname_from_full_name() -> None:
     assert outcomes(verification)["authors"] is Outcome.MATCH
 
 
+def test_arxiv_malformed_dates_are_skipped_not_fatal() -> None:
+    feed = atom(version=1, summary=ATTENTION_V7).replace(
+        b"<published>2017-06-12T17:57:34Z", b"<published>unknown"
+    )
+    verification = check_arxiv({}, FakeRegistry([("id_list=1706.03762", feed)]))
+    assert outcomes(verification)["year"] is Outcome.MATCH
+
+
 def test_arxiv_unreachable_is_unverified() -> None:
     registry = FakeRegistry([("arxiv.org", RegistryUnavailableError("HTTP 503"))])
     assert check_arxiv({}, registry).status is Status.UNVERIFIED
@@ -587,16 +626,15 @@ def test_log_has_one_row_per_source_and_escapes_pipes() -> None:
         entry(key="Missing", id="10.9999/none"),
     )
     missing = verify(second, FakeRegistry([("api.crossref.org", None)]))
-    log = render_log([verify(first, registry), missing], date(2026, 11, 8))
-    lines = log.splitlines()
-    header, rule, *rows = lines[: lines.index("")]
+    verifications = [verify(first, registry), missing]
+    rows = [log_row(v, date(2026, 11, 8)) for v in verifications]
+    header, rule = LOG_HEADER.splitlines()
     columns = header.count(" | ")
     assert rule.count("|") == header.count("|")
-    assert len(rows) == 2
     assert all(row.replace("\\|", "").count(" | ") == columns for row in rows)
     assert "A \\| B" in rows[0]
     assert "2026-11-08" in rows[0]
-    assert "1 of 2 sources verified" in log
+    assert log_summary(verifications) == "1 of 2 sources verified."
 
 
 # Command line
@@ -618,3 +656,31 @@ def test_main_reads_and_writes_utf8_whatever_the_console_code_page(
     log = written.getvalue().decode("utf-8")
     assert "Schr\u00f6dinger" in log
     assert "| VERIFIED |" in log
+
+
+def test_main_exits_2_on_input_nested_too_deeply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "deep.jsonl").write_text("[" * 100_000, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert main(["deep.jsonl"]) == 2
+
+
+def test_main_exits_3_on_a_fault_and_keeps_rows_already_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    lines = [json.dumps(entry()), json.dumps(entry(key="Second", id="10.1000/second"))]
+    (tmp_path / "sources.jsonl").write_text(chr(10).join(lines), encoding="utf-8")
+    registry = FakeRegistry(
+        [
+            ("10.1000/second", RuntimeError("bug")),
+            ("api.crossref.org", crossref()),
+            ("api.openalex.org", openalex()),
+        ]
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(verify_module, "RegistryClient", lambda: registry)
+    assert main(["sources.jsonl"]) == 3
+    captured = capsys.readouterr()
+    assert "| Feynman1982 |" in captured.out
+    assert "Second" in captured.err

@@ -24,6 +24,7 @@ verified, 1 if any is not, 2 if the input cannot be read or is invalid.
 from __future__ import annotations
 
 import argparse
+import http.client
 import io
 import json
 import math
@@ -58,6 +59,7 @@ MAX_RETRY_WAIT_SECONDS = 30.0
 # arXiv asks for one request every three seconds.
 ARXIV_INTERVAL_SECONDS = 3.0
 EARLIEST_YEAR = 1600
+YEAR_DIGITS = 4
 USER_AGENT = "writing-skill-verify/0.1"
 
 CROSSREF_WORKS = "https://api.crossref.org/works/"
@@ -278,7 +280,7 @@ def parse_sources(text: str, base_dir: Path) -> list[CitedSource]:
 
 
 def _parse_source(line: str, base_dir: Path) -> CitedSource:
-    entry = json.loads(line)
+    entry = _load_json(line)
     if not isinstance(entry, dict):
         raise ValueError(f"expected an object, got {type(entry).__name__}")
     authors, has_more = _authors(entry.get("authors"))
@@ -402,7 +404,7 @@ class RegistryClient:
                 if err.code not in _RETRYABLE_STATUSES or attempt == MAX_ATTEMPTS:
                     raise RegistryUnavailableError(f"{host}: HTTP {err.code}") from err
                 time.sleep(_retry_wait(err.headers.get("Retry-After"), attempt))
-            except OSError as err:
+            except (OSError, http.client.HTTPException) as err:
                 if attempt == MAX_ATTEMPTS:
                     raise RegistryUnavailableError(f"{host}: {err}") from err
                 time.sleep(_retry_wait(None, attempt))
@@ -480,10 +482,12 @@ def _look_up_doi(doi: Doi, fetch: Fetch) -> Record | Missing:
     if body is None:
         return Missing(url, "no Crossref record for this DOI")
     try:
-        work = json.loads(body)["message"]
-        record = _crossref_record(url, work)
-    except (ValueError, KeyError, TypeError) as err:
-        return Missing(url, f"Crossref returned an unreadable record ({err!r})")
+        work = _as_dict(_load_json(body)).get("message")
+    except ValueError as err:
+        return Missing(url, f"Crossref returned an unreadable record ({err})")
+    if not isinstance(work, dict):
+        return Missing(url, "Crossref returned a response without a work record")
+    record = _crossref_record(url, work)
     return _with_openalex(record, OPENALEX_WORKS + quoted + OPENALEX_FIELDS, fetch)
 
 
@@ -493,14 +497,14 @@ def _crossref_record(url: str, work: dict[str, Any]) -> Record:
     titles = (title, f"{title} {subtitle}") if subtitle else (title,)
     authors = tuple(
         str(author.get("family") or author.get("name") or "")
-        for author in work.get("author") or []
+        for author in _as_list(work.get("author"))
         if isinstance(author, dict)
     )
     years = tuple(
         dict.fromkeys(
-            int(work[name]["date-parts"][0][0])
+            year
             for name in ("issued", "published-print", "published-online")
-            if isinstance(work.get(name), dict)
+            if (year := _date_year(work.get(name))) is not None
         )
     )
     page = work.get("page")
@@ -508,7 +512,7 @@ def _crossref_record(url: str, work: dict[str, Any]) -> Record:
     abstract = work.get("abstract")
     texts = (
         (("abstract (Crossref)", normalise_passage(visible_text(abstract))),)
-        if abstract
+        if isinstance(abstract, str) and abstract
         else ()
     )
     return Record(
@@ -520,7 +524,7 @@ def _crossref_record(url: str, work: dict[str, Any]) -> Record:
         volume=str(work["volume"]) if work.get("volume") else None,
         first_page=str(first_page) if first_page else None,
         texts=texts,
-        notices=_crossref_notices(work.get("updated-by") or []),
+        notices=_crossref_notices(_as_list(work.get("updated-by"))),
         retraction_checked="Crossref",
         version="version of record",
     )
@@ -533,8 +537,7 @@ def _crossref_notices(updates: list[Any]) -> tuple[Notice, ...]:
             continue
         kind = str(update.get("type", "update"))
         notice_doi = str(update.get("DOI", ""))
-        parts = (update.get("updated") or {}).get("date-parts") or [[]]
-        when = "-".join(f"{part:02d}" for part in parts[0])
+        when = "-".join(f"{part:02d}" for part in _date_parts(update.get("updated")))
         label = update.get("label") or kind
         notices.setdefault(
             (kind, notice_doi),
@@ -548,7 +551,7 @@ def _crossref_notices(updates: list[Any]) -> tuple[Notice, ...]:
 def _with_openalex(record: Record, url: str, fetch: Fetch) -> Record:
     try:
         body = fetch(url)
-        work = json.loads(body) if body is not None else None
+        work = _load_json(body) if body is not None else None
     except RegistryUnavailableError as err:
         return replace(
             record, retraction_checked=f"Crossref; OpenAlex unavailable ({err})"
@@ -584,6 +587,38 @@ def _from_inverted_index(index: object) -> str:
     return " ".join(word for _, word in placed)
 
 
+def _load_json(text: str | bytes) -> object:
+    """Parse JSON, raising ValueError for anything unreadable, however deep."""
+    try:
+        return json.loads(text)
+    except RecursionError as err:
+        raise ValueError("JSON nested too deeply") from err
+
+
+def _as_dict(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: object) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _date_parts(value: object) -> list[int]:
+    """The leading numeric parts (year, month, day) of a Crossref date."""
+    parts = _as_list(_as_dict(value).get("date-parts"))
+    numbers: list[int] = []
+    for part in _as_list(parts[0]) if parts else []:
+        if not isinstance(part, int) or isinstance(part, bool):
+            break
+        numbers.append(part)
+    return numbers
+
+
+def _date_year(value: object) -> int | None:
+    parts = _date_parts(value)
+    return parts[0] if parts else None
+
+
 def _first(value: object) -> str:
     if isinstance(value, list) and value:
         return str(value[0])
@@ -595,8 +630,8 @@ class _ArxivEntry:
     version: int
     title: str
     authors: tuple[str, ...]
-    published_year: int
-    updated_year: int
+    published_year: int | None
+    updated_year: int | None
     summary: str
     comment: str
     journal_ref: str
@@ -650,13 +685,18 @@ def _parse_arxiv_entry(entry: ElementTree.Element) -> _ArxivEntry:
             _WHITESPACE.sub(" ", author.findtext(f"{_ATOM}name", "")).strip()
             for author in entry.findall(f"{_ATOM}author")
         ),
-        published_year=int(text(f"{_ATOM}published")[:4] or 0),
-        updated_year=int(text(f"{_ATOM}updated")[:4] or 0),
+        published_year=_leading_year(text(f"{_ATOM}published")),
+        updated_year=_leading_year(text(f"{_ATOM}updated")),
         summary=text(f"{_ATOM}summary"),
         comment=text(f"{_ARXIV_NS}comment"),
         journal_ref=text(f"{_ARXIV_NS}journal_ref"),
         doi=text(f"{_ARXIV_NS}doi"),
     )
+
+
+def _leading_year(timestamp: str) -> int | None:
+    year = timestamp[:YEAR_DIGITS]
+    return int(year) if len(year) == YEAR_DIGITS and year.isdigit() else None
 
 
 def _arxiv_record(url: str, cited: _ArxivEntry, latest: _ArxivEntry) -> Record:
@@ -683,7 +723,13 @@ def _arxiv_record(url: str, cited: _ArxivEntry, latest: _ArxivEntry) -> Record:
         query_url=url,
         titles=(cited.title,),
         authors=cited.authors,
-        years=tuple(dict.fromkeys((cited.published_year, cited.updated_year))),
+        years=tuple(
+            dict.fromkeys(
+                year
+                for year in (cited.published_year, cited.updated_year)
+                if year is not None
+            )
+        ),
         venue="arXiv",
         volume=None,
         first_page=None,
@@ -879,20 +925,16 @@ _COLUMNS = (
 )
 
 
-def render_log(verifications: Sequence[Verification], retrieved: date) -> str:
-    """The verification log: a Markdown table, then a one-line count."""
-    rows = [
-        "| " + " | ".join(_COLUMNS) + " |",
-        "|" + "---|" * len(_COLUMNS),
-        *(_row(verification, retrieved) for verification in verifications),
-    ]
+# The log is printed a row at a time, so a run cut short keeps what it checked.
+LOG_HEADER = "| " + " | ".join(_COLUMNS) + " |\n|" + "---|" * len(_COLUMNS)
+
+
+def log_summary(verifications: Sequence[Verification]) -> str:
     verified = sum(v.status is Status.VERIFIED for v in verifications)
-    return (
-        "\n".join(rows) + f"\n\n{verified} of {len(verifications)} sources verified.\n"
-    )
+    return f"{verified} of {len(verifications)} sources verified."
 
 
-def _row(verification: Verification, retrieved: date) -> str:
+def log_row(verification: Verification, retrieved: date) -> str:
     source = verification.source
     cells = (
         source.key,
@@ -990,8 +1032,20 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     client = RegistryClient()
-    verifications = [verify(source, client) for source in sources]
-    sys.stdout.write(render_log(verifications, date.today()))
+    retrieved = date.today()
+    verifications: list[Verification] = []
+    print(LOG_HEADER, flush=True)
+    for source in sources:
+        try:
+            verification = verify(source, client)
+        except Exception as err:
+            # The process boundary: an unforeseen fault is reported once, and
+            # the rows already printed stay valid.
+            print(f"verify.py stopped at {source.key}: {err!r}", file=sys.stderr)
+            return 3
+        verifications.append(verification)
+        print(log_row(verification, retrieved), flush=True)
+    print(f"\n{log_summary(verifications)}")
     return 0 if all(v.status is Status.VERIFIED for v in verifications) else 1
 
 
