@@ -29,7 +29,7 @@ Read the matching file in `registers/` before drafting. Choose from the request 
    - `[DATA NEEDED: what]` for a number or result the student has not supplied;
    - `[CITATION NEEDED: claim]` for a claim with no source yet;
    - `[UNVERIFIED: source as given]` and `[CLAIM NOT CHECKED: reason]` as `sources.md` defines them.
-4. **Sources.** Whenever the text cites, quotes or leans on published work, read `sources.md` and follow it. No reference is ever written from memory.
+4. **Sources.** Whenever the text cites, quotes or leans on published work, read `sources.md` and follow it: it says how to find sources on a fixed budget and how to check them with `scripts/verify.py`. No reference is ever written from memory.
 5. **Match the student's own voice when there is a sample.** If the student supplies writing of their own, it outranks `exemplars.md`: match its sentence length, its use of "I" and "we", its connectives and its level of formality. Without a sample, calibrate on `exemplars.md`.
 
 ## The voice
@@ -74,7 +74,8 @@ When asked to rewrite, tighten or "make it sound more human", keep the student's
 
 - `tells.md`: the catalogue of giveaways, each with what to write instead.
 - `clarity.md`: defining terms, explaining equations, ordering information, analogies, precision.
-- `sources.md`: finding and verifying sources, gap markers, the verification log, citation styles.
+- `sources.md`: finding sources on a budget, verifying them, gap markers, the verification log, citation styles.
 - `exemplars.md`: short passages from admired human writers and what each one does.
 - `registers/`: one file per kind of writing.
 - `scripts/check.py`: the draft checker.
+- `scripts/verify.py`: checks references and quoted passages against the registries.
