@@ -1,6 +1,11 @@
+import email.message
+import http.client
 import io
 import json
 import sys
+import time
+import urllib.error
+import urllib.request
 from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
@@ -13,6 +18,7 @@ from verify import (
     CitedSource,
     Fetch,
     Outcome,
+    RegistryClient,
     RegistryUnavailableError,
     Status,
     Verification,
@@ -805,3 +811,99 @@ def test_main_stops_checking_at_the_run_time_limit(
     assert main(["sources.jsonl"]) == 1
     assert registry.requested == []
     assert "run time limit" in capsys.readouterr().out
+
+
+# Registry client
+
+
+class FakeNetwork:
+    """Stands in for urlopen and the clock: answers in order, records sleeps."""
+
+    def __init__(self, answers: Sequence[bytes | Exception]) -> None:
+        self.answers = list(answers)
+        self.urls: list[str] = []
+        self.slept: list[float] = []
+        self.now = 1000.0
+
+    def urlopen(self, request: urllib.request.Request, timeout: float) -> io.BytesIO:
+        assert timeout > 0
+        self.urls.append(request.full_url)
+        answer = self.answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return io.BytesIO(answer)
+
+    def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
+        self.now += seconds
+
+    def monotonic(self) -> float:
+        return self.now
+
+
+def http_error(code: int, retry_after: str | None = None) -> urllib.error.HTTPError:
+    headers = email.message.Message()
+    if retry_after is not None:
+        headers["Retry-After"] = retry_after
+    return urllib.error.HTTPError("https://x", code, "error", headers, None)
+
+
+@pytest.fixture
+def network(monkeypatch: pytest.MonkeyPatch) -> FakeNetwork:
+    fake = FakeNetwork([])
+    monkeypatch.setattr(urllib.request, "urlopen", fake.urlopen)
+    monkeypatch.setattr(time, "sleep", fake.sleep)
+    monkeypatch.setattr(time, "monotonic", fake.monotonic)
+    return fake
+
+
+CROSSREF_URL = "https://api.crossref.org/works/10.1000/x"
+ARXIV_URL = "https://export.arxiv.org/api/query?id_list=1706.03762"
+
+
+def test_client_returns_none_for_not_found(network: FakeNetwork) -> None:
+    network.answers = [http_error(404)]
+    assert RegistryClient()(CROSSREF_URL) is None
+
+
+def test_client_retries_a_busy_registry_then_answers(network: FakeNetwork) -> None:
+    network.answers = [http_error(503), http.client.IncompleteRead(b""), b"ok"]
+    assert RegistryClient()(CROSSREF_URL) == b"ok"
+    assert len(network.slept) == 2
+
+
+def test_client_caps_the_wait_a_registry_asks_for(network: FakeNetwork) -> None:
+    network.answers = [http_error(429, retry_after="999"), b"ok"]
+    RegistryClient()(CROSSREF_URL)
+    assert network.slept == [verify_module.MAX_RETRY_WAIT_SECONDS]
+
+
+def test_client_gives_up_after_the_last_attempt(network: FakeNetwork) -> None:
+    network.answers = [http_error(503)] * verify_module.MAX_ATTEMPTS
+    with pytest.raises(RegistryUnavailableError, match="HTTP 503"):
+        RegistryClient()(CROSSREF_URL)
+
+
+def test_client_does_not_retry_a_refused_request(network: FakeNetwork) -> None:
+    network.answers = [http_error(400), b"never sent"]
+    with pytest.raises(RegistryUnavailableError, match="HTTP 400"):
+        RegistryClient()(CROSSREF_URL)
+    assert network.slept == []
+
+
+def test_client_refuses_an_oversized_response(
+    network: FakeNetwork, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(verify_module, "MAX_RESPONSE_BYTES", 4)
+    network.answers = [b"12345"]
+    with pytest.raises(RegistryUnavailableError, match="over 4 bytes"):
+        RegistryClient()(CROSSREF_URL)
+
+
+def test_client_spaces_arxiv_requests_but_not_others(network: FakeNetwork) -> None:
+    network.answers = [b"a", b"b", b"c"]
+    client = RegistryClient()
+    client(ARXIV_URL)
+    client(CROSSREF_URL)
+    client(ARXIV_URL)
+    assert network.slept == [verify_module.ARXIV_INTERVAL_SECONDS]
