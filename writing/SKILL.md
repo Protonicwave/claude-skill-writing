@@ -78,3 +78,4 @@ When asked to rewrite, tighten or "make it sound more human", keep the student's
 - `exemplars.md`: short passages from admired human writers and what each one does.
 - `registers/`: one file per kind of writing.
 - `scripts/check.py`: the draft checker.
+- `scripts/verify.py`: checks references and quoted passages against the registries.
