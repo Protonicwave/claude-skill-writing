@@ -235,6 +235,12 @@ def test_parse_identifier_rejects_other_text(raw: str) -> None:
         (json.dumps({k: v for k, v in entry().items() if k != "year"}), "'year'"),
         (json.dumps(entry(year="1982")), "'year'"),
         (json.dumps(entry(year=True)), "'year'"),
+        (json.dumps(entry(year=1599)), "'year'"),
+        (json.dumps(entry(year=3000)), "'year'"),
+        (
+            json.dumps(entry(evidence=[{"claim": "x", "quote": FEYNMAN_QUOTE}] * 21)),
+            "1 to 20",
+        ),
         (json.dumps(entry(authors="Feynman")), "'authors'"),
         (json.dumps(entry(authors=["et al."])), "'authors'"),
         (json.dumps(entry(evidence=[])), "'evidence'"),
@@ -907,3 +913,12 @@ def test_client_spaces_arxiv_requests_but_not_others(network: FakeNetwork) -> No
     client(CROSSREF_URL)
     client(ARXIV_URL)
     assert network.slept == [verify_module.ARXIV_INTERVAL_SECONDS]
+
+
+def test_main_exits_2_on_oversized_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "sources.jsonl").write_text(json.dumps(entry()), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(verify_module, "MAX_INPUT_CHARACTERS", 10)
+    assert main(["sources.jsonl"]) == 2
