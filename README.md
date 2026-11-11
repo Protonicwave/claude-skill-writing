@@ -66,4 +66,4 @@ Run each case with skill-creator, saving the delivered text as `outputs/delivera
 uv run python evals/grade.py evals/workspace/iteration-1/*/with_skill
 ```
 
-The grader merges its results into each run's `grading.json`, keeping any expectations a grader has already written there.
+The grader merges its results into each run's `grading.json`, keeping any expectations a grader has already written there. `evals/baseline.md` records the score of the skill before any change, with the brief each run was given, so a later run can be made the same way and compared case by case.
