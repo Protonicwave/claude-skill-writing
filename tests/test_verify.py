@@ -2313,7 +2313,16 @@ def test_audit_does_not_take_an_email_address_or_mention_as_a_cite() -> None:
 
 def test_audit_reports_a_number_found_in_no_quote_of_the_cited_source() -> None:
     audit = audited("Intro.\nThe yield was\n46.1 percent [@a].")
-    assert found(audit) == [(2, "warning", "46.1 appears in no quote from `a`")]
+    assert found(audit) == [(3, "warning", "46.1 appears in no quote from `a`")]
+
+
+def test_audit_reports_each_number_at_its_own_line_within_one_sentence() -> None:
+    audit = audited("It was 46.1,\n46.2 after [@a]\nand 1,234.5 later.")
+    assert found(audit) == [
+        (1, "warning", "46.1 appears in no quote from `a`"),
+        (2, "warning", "46.2 appears in no quote from `a`"),
+        (3, "warning", "1234.5 appears in no quote from `a`"),
+    ]
 
 
 def test_audit_accepts_a_number_found_in_a_quote_of_the_cited_source() -> None:

@@ -1692,8 +1692,8 @@ _MARKER = re.compile(GAP_MARKER, re.IGNORECASE)
 _SENTENCE_BREAK = re.compile(
     r"(?<=[.!?])\s+(?=[A-Z\\])|\n[ \t]*\n\s*|^#{1,6}[ \t].*$", re.MULTILINE
 )
-_THOUSANDS_COMMA = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
-_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+# A thousands comma is a comma between a digit and exactly three more digits.
+_NUMBER = re.compile(r"\d+(?:,\d{3}(?!\d))*(?:\.\d+)?")
 
 
 class Severity(StrEnum):
@@ -1851,7 +1851,15 @@ def _key_finding(
 
 
 def _numbers(text: str) -> list[str]:
-    return _NUMBER.findall(_THOUSANDS_COMMA.sub("", text))
+    return [number for _, number in _numbers_at(text, 0, len(text))]
+
+
+def _numbers_at(text: str, begin: int, end: int) -> list[tuple[int, str]]:
+    """The numbers in text[begin:end], thousands commas removed, with their offsets."""
+    return [
+        (match.start(), match.group().replace(",", ""))
+        for match in _NUMBER.finditer(text, begin, end)
+    ]
 
 
 def _number_findings(
@@ -1875,13 +1883,14 @@ def _number_findings(
         supported = set().union(*(quoted[key] for key in keys))
         years = {str(by_key[key].year) for key in keys}
         names = ", ".join(f"`{key}`" for key in keys)
-        line = lines.number(begin)
         findings += (
             AuditFinding(
-                line, Severity.WARNING, f"{n} appears in no quote from {names}"
+                lines.number(offset),
+                Severity.WARNING,
+                f"{number} appears in no quote from {names}",
             )
-            for n in _numbers(_prose(text, begin, end, inside))
-            if _needs_quote(n, years) and n not in supported
+            for offset, number in _prose_numbers(text, begin, end, inside)
+            if _needs_quote(number, years) and number not in supported
         )
     return findings
 
@@ -1922,16 +1931,18 @@ def _sentence_bounds(masked: str) -> list[tuple[int, int]]:
     return bounds
 
 
-def _prose(text: str, begin: int, end: int, spans: Sequence[_Span]) -> str:
-    pieces: list[str] = []
+def _prose_numbers(
+    text: str, begin: int, end: int, spans: Sequence[_Span]
+) -> list[tuple[int, str]]:
+    """The numbers of a sentence that lie outside its cites and markers."""
+    found: list[tuple[int, str]] = []
     position = begin
     for span in spans:
         if span.end <= position:
             continue
-        pieces.append(text[position : max(span.start, position)])
+        found += _numbers_at(text, position, max(span.start, position))
         position = span.end
-    pieces.append(text[position:end])
-    return " ".join(pieces)
+    return found + _numbers_at(text, position, end)
 
 
 def render_audit(audit: DraftAudit) -> str:
