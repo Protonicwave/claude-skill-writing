@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -243,3 +244,30 @@ def test_shipped_eval_set_loads_with_judgement_and_automatic_checks() -> None:
     for loaded in cases.values():
         assert loaded.expectations
         assert loaded.checks
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        subprocess.TimeoutExpired(cmd="check.py", timeout=60),
+        subprocess.CompletedProcess(args=[], returncode=2, stdout="", stderr="boom"),
+    ],
+)
+def test_main_reports_a_checker_failure_without_a_traceback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure: object,
+) -> None:
+    def fake_run(*_args: object, **_kwargs: object) -> object:
+        if isinstance(failure, BaseException):
+            raise failure
+        return failure
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    evals = write_evals(
+        tmp_path, [case(checks=[{"kind": "checker_clean", "format": "plain"}])]
+    )
+    run_dir = make_run(tmp_path, "The slope was 4.90 V.")
+    assert main([str(run_dir), "--evals", str(evals)]) == 2
+    assert "check.py" in capsys.readouterr().err

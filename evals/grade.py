@@ -90,6 +90,10 @@ Check = (
 )
 
 
+class CheckerFailedError(Exception):
+    """check.py crashed or timed out, so no deliverable can be scored."""
+
+
 @dataclass(frozen=True, slots=True)
 class EvalCase:
     id: int
@@ -235,17 +239,22 @@ def _phrases_found(phrases: tuple[str, ...], text: str) -> list[str]:
 
 def _checker_errors(deliverable: str, fmt: FormatName) -> list[str]:
     # UTF-8 mode, because check.py reads standard input in the console's code page.
-    completed = subprocess.run(  # noqa: S603  fixed interpreter and script, no shell
-        [sys.executable, "-I", "-X", "utf8", str(CHECKER), "-", "--format", fmt],
-        input=deliverable,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=CHECKER_TIMEOUT_SECONDS,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(  # noqa: S603  fixed interpreter and script, no shell
+            [sys.executable, "-I", "-X", "utf8", str(CHECKER), "-", "--format", fmt],
+            input=deliverable,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=CHECKER_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as err:
+        raise CheckerFailedError(
+            f"check.py took longer than {CHECKER_TIMEOUT_SECONDS} s"
+        ) from err
     if completed.returncode not in (0, 1):
-        raise RuntimeError(
+        raise CheckerFailedError(
             f"check.py exited {completed.returncode}: {completed.stderr}"
         )
     return [line for line in completed.stdout.splitlines() if ": error [" in line]
@@ -402,7 +411,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             summary = cast(dict[str, int], grading["summary"])
             print(f"{run_dir}: {summary['passed']} of {summary['total']} passed")
-    except (OSError, ValueError) as err:
+    except (OSError, ValueError, CheckerFailedError) as err:
         print(f"cannot grade: {err}", file=sys.stderr)
         return 2
     return 0
