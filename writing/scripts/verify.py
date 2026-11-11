@@ -147,6 +147,8 @@ _LATEX_ESCAPES = str.maketrans(
         "^": r"\textasciicircum{}",
     }
 )
+# Characters BibTeX cannot read in a cite key.
+_BIB_KEY_FORBIDDEN = re.compile(r"[\s,{}%#\\]")
 # A hyphen or en dash between two page numbers is a range.
 _PAGE_RANGE = re.compile(r"(\d)\s*[-\N{EN DASH}]+\s*(\d)")
 _ET_AL = re.compile(r"^et\.?\s+al\.?$", re.IGNORECASE)
@@ -396,7 +398,7 @@ def _parse_source(line: str, saved_texts: _SavedTexts) -> CitedSource:
         raise ValueError(f"expected an object, got {type(entry).__name__}")
     authors, has_more = _authors(entry.get("authors"))
     return CitedSource(
-        key=_required_text(entry, "key"),
+        key=_bib_key(_required_text(entry, "key")),
         identifier=parse_identifier(_required_text(entry, "id")),
         title=_required_text(entry, "title"),
         authors=authors,
@@ -406,6 +408,16 @@ def _parse_source(line: str, saved_texts: _SavedTexts) -> CitedSource:
         pages=_optional_text(entry, "pages"),
         evidence=_evidence(entry.get("evidence"), saved_texts),
     )
+
+
+def _bib_key(key: str) -> str:
+    forbidden = _BIB_KEY_FORBIDDEN.search(key)
+    if forbidden:
+        raise ValueError(
+            f"key {key!r} contains {forbidden.group()!r}, which BibTeX cannot "
+            "read in a cite key"
+        )
+    return key
 
 
 def _required_text(entry: dict[str, Any], name: str) -> str:

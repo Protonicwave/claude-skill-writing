@@ -327,6 +327,15 @@ def test_parse_sources_rejects_bad_input(text: str, message: str) -> None:
         parse_sources(text, Path())
 
 
+@pytest.mark.parametrize(
+    "key", ["a b", "a,b", "a{b", "a}b", "a%b", "a#b", "a\\b", "a\tb"]
+)
+def test_parse_sources_rejects_keys_bibtex_cannot_parse(key: str) -> None:
+    text = "\n" + json.dumps(entry(key=key))
+    with pytest.raises(ValueError, match=r"line 2: key"):
+        parse_sources(text, Path())
+
+
 def test_parse_sources_rejects_more_than_the_limit() -> None:
     lines = [json.dumps(entry(key=f"k{n}", id=f"10.1000/k{n}")) for n in range(51)]
     with pytest.raises(ValueError, match="more than 50"):
