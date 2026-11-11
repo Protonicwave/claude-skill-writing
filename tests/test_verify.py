@@ -12,6 +12,7 @@ import urllib.request
 from collections.abc import Callable, Sequence
 from datetime import date
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 import pytest
 import verify as verify_module
@@ -1838,6 +1839,84 @@ def test_bib_page_range_is_written_with_a_double_hyphen(registered: str) -> None
 def test_bib_single_page_and_article_number_are_kept_as_registered() -> None:
     _, fields = bib_of({"pages": None}, doi_registry(crossref(page="P04005")))
     assert fields["pages"] == "P04005"
+
+
+def arxiv_bib(
+    cited: dict[str, object], *, title: str, authors: Sequence[str] = VASWANI_AUTHORS
+) -> dict[str, str]:
+    feed = atom(version=7, summary=ATTENTION_V7, title=escape(title), authors=authors)
+    verification = check_arxiv(cited, FakeRegistry([("id_list=1706.03762", feed)]))
+    return parse_bib(render_bib([verification]))[1]
+
+
+def test_bib_arxiv_title_escapes_bare_ampersand_percent_and_hash_only() -> None:
+    title = r"Q&A on 100% of $\alpha$ and \& #1"
+    fields = arxiv_bib({"title": "Q A on 100 of alpha and 1"}, title=title)
+    assert fields["title"] == r"Q\&A on 100\% of $\alpha$ and \& \#1"
+
+
+def test_bib_arxiv_collaboration_author_is_braced() -> None:
+    fields = arxiv_bib(
+        {"authors": ["Vaswani", "Collaboration"]},
+        title="Attention Is All You Need",
+        authors=("Ashish Vaswani", "ATLAS Collaboration"),
+    )
+    assert fields["author"] == "Ashish Vaswani and {ATLAS Collaboration}"
+
+
+def test_bib_crossref_family_name_with_a_space_and_no_given_name_is_braced() -> None:
+    work = crossref(author=[{"family": "ATLAS Collaboration"}])
+    cited: dict[str, object] = {"authors": ["ATLAS Collaboration"]}
+    _, fields = bib_of(cited, doi_registry(work))
+    assert fields["author"] == "{ATLAS Collaboration}"
+
+
+def test_bib_datacite_family_name_with_a_space_and_no_given_name_is_braced() -> None:
+    creators = [{"name": "ATLAS Collaboration", "familyName": "ATLAS Collaboration"}]
+    cited: dict[str, object] = {"authors": ["ATLAS Collaboration"]}
+    _, fields = bib_of(cited, datacite_registry(datacite(creators=creators)))
+    assert fields["author"] == "{ATLAS Collaboration}"
+
+
+def test_bib_pages_fall_back_to_the_article_number() -> None:
+    work = crossref(page=None, **{"article-number": "012001"})
+    _, fields = bib_of({"pages": None}, doi_registry(work))
+    assert fields["pages"] == "012001"
+
+
+def test_bib_pages_prefer_the_page_range_to_the_article_number() -> None:
+    work = crossref(**{"article-number": "012001"})
+    _, fields = bib_of({"pages": None}, doi_registry(work))
+    assert fields["pages"] == "467--488"
+
+
+def test_bib_datacite_article_without_a_container_title_has_no_journal() -> None:
+    registry = datacite_registry(datacite(container=None))
+    header, fields = bib_of({}, registry)
+    assert header == "@misc{Feynman1982,"
+    assert "journal" not in fields
+    assert fields["publisher"] == "Springer"
+
+
+def test_bib_protects_acronyms_and_internal_capitals_with_braces() -> None:
+    title = "The LHC and McDonald at pH 7 in CO2"
+    work = crossref(title=[title])
+    _, fields = bib_of({"title": title}, doi_registry(work))
+    assert fields["title"] == "The {LHC} and {McDonald} at {pH} 7 in {CO2}"
+
+
+def test_bib_protection_leaves_maths_commands_and_braced_text_alone() -> None:
+    title = r"Fits of $\mathrm{SU}(3)$ and \LaTeX{} to {LHC} data"
+    fields = arxiv_bib(
+        {"title": "Fits of mathrm SU 3 and LaTeX to LHC data"}, title=title
+    )
+    assert fields["title"] == title
+
+
+def test_bib_protection_covers_escaped_text() -> None:
+    work = crossref(title=["ATLAS & CMS_x"])
+    _, fields = bib_of({"title": "ATLAS CMS x"}, doi_registry(work))
+    assert fields["title"] == r"{ATLAS} \& {CMS}\_x"
 
 
 def mixed_lines() -> list[str]:

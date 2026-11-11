@@ -147,6 +147,20 @@ _LATEX_ESCAPES = str.maketrans(
         "^": r"\textasciicircum{}",
     }
 )
+# A character LaTeX reads as markup that is not already escaped with a backslash.
+_BARE_LATEX_SPECIAL = re.compile(r"(?<!\\)([&%#])")
+# What the capital-protection pass leaves alone: maths, commands, backslash
+# escapes and text already in braces. Anything else is matched as a word.
+_TITLE_WORD_OR_MARKUP = re.compile(
+    r"\$\$.*?\$\$|\$.*?\$|\\[A-Za-z]+|\\.|\{[^{}]*\}|(?P<word>\w+)", re.DOTALL
+)
+# Names of groups of people, which BibTeX splits into given names and a
+# surname unless they are braced.
+_GROUP_AUTHOR = re.compile(
+    r"\b(?:collaboration|consortium|team|group|committee|project|experiment"
+    r"|institute|university|laboratory|network|initiative)\b",
+    re.IGNORECASE,
+)
 # Characters BibTeX cannot read in a cite key.
 _BIB_KEY_FORBIDDEN = re.compile(r"[\s,{}%#\\]")
 # A hyphen or en dash between two page numbers is a range.
@@ -834,12 +848,15 @@ def _datacite_bib(
 ) -> BibDetails:
     resource_type = _as_dict(attributes.get("types")).get("resourceTypeGeneral")
     entry_type, venue_field = _DATACITE_TYPES.get(str(resource_type), _DATACITE_OTHER)
+    if venue_field and not _text(container.get("title")):
+        # The record's venue would fall back to the publisher, not a journal.
+        entry_type, venue_field = _DATACITE_OTHER
     first, last = _text(container.get("firstPage")), _text(container.get("lastPage"))
     title, subtitle = _datacite_title_parts(attributes.get("titles"))
     return BibDetails(
         entry_type=entry_type,
         venue_field=venue_field,
-        title=_latex_escape(_bib_title(title, subtitle)),
+        title=_protect_capitals(_latex_escape(_bib_title(title, subtitle))),
         authors=tuple(
             name
             for creator in _as_list(attributes.get("creators"))
@@ -926,6 +943,9 @@ def _latex_escape(text: str) -> str:
 
 
 def _bib_person(family: str, given: str) -> str:
+    if not given and _WHITESPACE.search(family):
+        # Alone, a family name with spaces would be split into given names.
+        return _bib_organisation(family)
     name = _latex_escape(family)
     return f"{name}, {_latex_escape(given)}" if given else name
 
@@ -933,6 +953,32 @@ def _bib_person(family: str, given: str) -> str:
 def _bib_organisation(name: str) -> str:
     """An organisation in braces, so BibTeX does not split it into parts."""
     return f"{{{_latex_escape(name)}}}" if name else ""
+
+
+def _protect_capitals(text: str) -> str:
+    """Brace each word with a capital after its first letter, so a style that
+    lowers case keeps acronyms such as LHC.
+
+    Maths, commands, escapes and text already in braces are left as they are.
+    """
+
+    def protect(match: re.Match[str]) -> str:
+        word = match.group("word")
+        if word is not None and any(char.isupper() for char in word[1:]):
+            return f"{{{word}}}"
+        return match.group()
+
+    return _TITLE_WORD_OR_MARKUP.sub(protect, text)
+
+
+def _arxiv_bib_title(title: str) -> str:
+    """An arXiv title is LaTeX as submitted: only a bare &, % or # is escaped."""
+    return _protect_capitals(_BARE_LATEX_SPECIAL.sub(r"\\\1", title))
+
+
+def _arxiv_bib_author(name: str) -> str:
+    escaped = _BARE_LATEX_SPECIAL.sub(r"\\\1", name)
+    return f"{{{escaped}}}" if _GROUP_AUTHOR.search(name) else escaped
 
 
 def _bib_title(title: str, subtitle: str) -> str:
@@ -951,8 +997,10 @@ def _crossref_bib(work: dict[str, Any]) -> BibDetails:
     return BibDetails(
         entry_type=entry_type,
         venue_field=venue_field,
-        title=_latex_escape(
-            _bib_title(_first(work.get("title")), _first(work.get("subtitle")))
+        title=_protect_capitals(
+            _latex_escape(
+                _bib_title(_first(work.get("title")), _first(work.get("subtitle")))
+            )
         ),
         authors=tuple(
             name
@@ -961,7 +1009,9 @@ def _crossref_bib(work: dict[str, Any]) -> BibDetails:
         ),
         volume=_text(work.get("volume")) or None,
         issue=_text(work.get("issue")) or None,
-        pages=_PAGE_RANGE.sub(r"\1--\2", _text(work.get("page"))) or None,
+        pages=_PAGE_RANGE.sub(r"\1--\2", _text(work.get("page")))
+        or _text(work.get("article-number"))
+        or None,
         publisher=publisher
         if publisher and entry_type in _CROSSREF_PUBLISHED
         else None,
@@ -1246,8 +1296,8 @@ def _arxiv_record(
         bib=BibDetails(
             entry_type="misc",
             venue_field="",
-            title=_WHITESPACE.sub(" ", cited.title).strip(),
-            authors=tuple(name for name in cited.authors if name),
+            title=_arxiv_bib_title(cited.title),
+            authors=tuple(_arxiv_bib_author(name) for name in cited.authors if name),
             volume=None,
             issue=None,
             pages=None,
