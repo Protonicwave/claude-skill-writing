@@ -1608,8 +1608,9 @@ def _cell(text: str) -> str:
 _BIB_STATUSES = frozenset({Status.VERIFIED, Status.CLAIM_NOT_CHECKED})
 
 
-def _is_bib_ready(verification: Verification) -> bool:
-    return verification.bib is not None and verification.status in _BIB_STATUSES
+def _ready_bib(verification: Verification) -> BibDetails | None:
+    """The BibTeX details of a source whose fields all matched, else None."""
+    return verification.bib if verification.status in _BIB_STATUSES else None
 
 
 def bib_entry(verification: Verification) -> str | None:
@@ -1617,8 +1618,8 @@ def bib_entry(verification: Verification) -> str | None:
 
     The entry comes from the registry record, not from the cited fields.
     """
-    details = verification.bib
-    if details is None or not _is_bib_ready(verification):
+    details = _ready_bib(verification)
+    if details is None:
         return None
     lines = [
         f"  {name} = {{{value}}},"
@@ -1666,7 +1667,7 @@ def bib_report(
     path: Path,
 ) -> str:
     """One line: how many sources were written, and which were left out and why."""
-    ready = {v.source.key for v in verifications if _is_bib_ready(v)}
+    ready = {v.source.key for v in verifications if _ready_bib(v) is not None}
     statuses = {v.source.key: v.status.value for v in verifications}
     left_out = [
         f"{source.key} ({statuses.get(source.key, 'NOT CHECKED')})"
