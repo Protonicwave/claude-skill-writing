@@ -142,6 +142,11 @@ def test_load_cases_requires_the_skill_name(tmp_path: Path) -> None:
         load_cases(path)
 
 
+def test_numbers_with_thousands_separators_and_decimals_match() -> None:
+    check = NumbersFromInputs()
+    assert score(check, "A total of 1,234.5 V.", "Total 1234.5 V.").passed
+
+
 def make_run(tmp_path: Path, deliverable: str | None) -> Path:
     run_dir = tmp_path / "iteration-1" / "data-gap" / "with_skill"
     (run_dir / "outputs").mkdir(parents=True)

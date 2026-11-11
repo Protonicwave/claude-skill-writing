@@ -36,7 +36,7 @@ WORD = re.compile(r"[A-Za-z0-9][\w'\u2019-]*")
 # ISO dates are written at run time and cannot come from the inputs.
 ISO_DATE = re.compile(r"\b[0-9]{4}-[0-9]{2}-[0-9]{2}\b")
 NUMBER = re.compile(r"[0-9]+(?:[.,][0-9]+)*")
-THOUSANDS = re.compile(r"[0-9]{1,3}(?:,[0-9]{3})+")
+THOUSANDS = re.compile(r"[0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?")
 HASHTAG = re.compile(r"(?<![\w#&])#[A-Za-z]\w*")
 SENTENCE_END = re.compile(r"[.!?]+[\"')\]]*(?=\s|$)")
 NOT_PROSE_BLOCK = re.compile(r"^\s*(?:#|[-*+]\s|\d+[.)]\s|>|```|\|)")
