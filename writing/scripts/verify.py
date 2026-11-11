@@ -836,7 +836,7 @@ def _datacite_record(url: str, attributes: dict[str, Any]) -> Record:
         first_page=first_page or None,
         texts=_datacite_abstract(attributes.get("descriptions")),
         notices=(),
-        retraction_checked="DataCite",
+        retraction_checked="",
         version="version of record",
         open_text=None,
         bib=_datacite_bib(attributes, container, _text(publisher)),
@@ -1088,19 +1088,23 @@ def _crossref_notices(updates: list[Any]) -> tuple[Notice, ...]:
 
 def _with_openalex(record: Record, url: str, fetch: Fetch) -> Record:
     registry = record.retraction_checked
+
+    def not_checked(problem: str) -> Record:
+        # With no earlier registry, nothing was checked and the column is empty.
+        return replace(
+            record,
+            retraction_checked=f"{registry}; {problem}" if registry else "",
+        )
+
     try:
         body = fetch(url)
         work = _load_json(body) if body is not None else None
     except RegistryUnavailableError as err:
-        return replace(
-            record, retraction_checked=f"{registry}; OpenAlex unavailable ({err})"
-        )
+        return not_checked(f"OpenAlex unavailable ({err})")
     except ValueError:
-        return replace(
-            record, retraction_checked=f"{registry}; OpenAlex record unreadable"
-        )
+        return not_checked("OpenAlex record unreadable")
     if not isinstance(work, dict):
-        return replace(record, retraction_checked=f"{registry}; no OpenAlex record")
+        return not_checked("no OpenAlex record")
     notices = record.notices
     if work.get("is_retracted") is True:
         notices += (Notice("retracted", True, "OpenAlex marks it retracted"),)
@@ -1112,7 +1116,7 @@ def _with_openalex(record: Record, url: str, fetch: Fetch) -> Record:
         record,
         notices=notices,
         texts=texts,
-        retraction_checked=f"{registry} and OpenAlex",
+        retraction_checked=f"{registry} and OpenAlex" if registry else "OpenAlex",
         open_text=_open_access_url(work.get("open_access")),
     )
 
@@ -1568,7 +1572,7 @@ def _field_summary(verification: Verification) -> str:
 def _retraction_summary(verification: Verification, retrieved: date) -> str:
     if verification.notices:
         return "; ".join(notice.detail for notice in verification.notices)
-    if verification.reason:
+    if verification.reason or not verification.retraction_checked:
         return "not checked"
     return f"none found in {verification.retraction_checked} on {retrieved.isoformat()}"
 

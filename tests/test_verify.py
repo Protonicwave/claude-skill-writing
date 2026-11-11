@@ -707,18 +707,29 @@ def test_datacite_record_is_enriched_with_openalex() -> None:
     assert verification.status is Status.RETRACTED
 
 
-def test_retraction_column_names_datacite_and_openalex() -> None:
+def test_retraction_column_names_only_openalex_for_a_datacite_record() -> None:
     verification = check({}, datacite_registry(datacite()))
-    assert verification.retraction_checked == "DataCite and OpenAlex"
+    assert verification.retraction_checked == "OpenAlex"
     row = log_row(verification, date(2026, 11, 8))
-    assert "none found in DataCite and OpenAlex on 2026-11-08" in row
+    assert retraction_cell(row) == "none found in OpenAlex on 2026-11-08"
 
 
-def test_retraction_column_records_an_openalex_outage_after_datacite() -> None:
-    registry = datacite_registry(datacite(), alex=RegistryUnavailableError("HTTP 503"))
-    verification = check({}, registry)
+@pytest.mark.parametrize(
+    "alex",
+    [RegistryUnavailableError("HTTP 503"), b"not json", b"null"],
+    ids=["outage", "unreadable", "no-record"],
+)
+def test_retraction_column_says_not_checked_when_nothing_checked_a_datacite_record(
+    alex: bytes | Exception,
+) -> None:
+    verification = check({}, datacite_registry(datacite(), alex=alex))
     assert verification.status is Status.VERIFIED
-    assert verification.retraction_checked.startswith("DataCite; OpenAlex unavailable")
+    row = log_row(verification, date(2026, 11, 8))
+    assert retraction_cell(row) == "not checked"
+
+
+def retraction_cell(row: str) -> str:
+    return row.split(" | ")[6]
 
 
 # Quoted passages
