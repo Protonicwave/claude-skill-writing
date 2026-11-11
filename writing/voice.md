@@ -1,6 +1,6 @@
 # Tone on request
 
-A request for a tone ("warmer", "more formal", "less blunt", "punchier") names a direction, not a destination. Treat tone as five dials, each with a register default and a set of concrete things it moves. A request moves the dials its words name, by one step unless it says "much" or "very", and leaves the others where the register or the student's own text set them.
+A request for a tone ("warmer", "more formal", "less blunt", "punchier") names a direction, not a destination. Treat tone as five dials, each with a register default and a set of concrete things it moves. Each dial has four settings: none, low, medium and high. A request moves the dials its words name, by one setting unless it says "much" or "very", and leaves the others where the register or the student's own text set them. Some words name two dials: "punchier" moves concision and directness up together.
 
 When the student's own text is the starting point, its level on each dial is the base, not the register default. A tone change to the student's text changes tone and nothing else.
 
@@ -30,7 +30,7 @@ Warmth is specific or it is filler. "Hope everyone is well", a row of exclamatio
 
 What it moves: where the request or the point sits (first line, or after the context); a bare imperative, a question, or a statement of what is needed; whether the text says who does what.
 
-Up: "more direct", "get to the point", "firmer", "clearer about what I need". Down: "gentler", "more diplomatic", "less pushy".
+Up: "more direct", "get to the point", "punchier", "firmer", "clearer about what I need". Down: "gentler", "more diplomatic", "less pushy".
 
 Lower directness changes the form of the request, never whether it is there. "The plotting script must be fixed" can become "Could we get the plotting script fixed?", but the deadline and the consequence stay as clear as before. Keep the request in the first two sentences whatever the setting: lower directness adds context before it, not a paragraph of it.
 
@@ -50,21 +50,21 @@ What it moves: words per point. Cut in this order: padding and stock phrases, co
 
 Up: "shorter", "tighter", "punchier", "cut it down", a word limit. Down: "fuller", "more detail", "expand", "flesh it out".
 
-Never cut a fact the reader needs to act or to judge the claim. Never expand with a new claim, number or source: more detail means more of the student's own material, and where there is none, a `[DATA NEEDED: what]` marker or a question to the student. "Punchier" means shorter and more direct, not one-sentence paragraphs.
+Never cut a fact the reader needs to act or to judge the claim. Never expand with a new claim, number or source: more detail means more of the student's own material, and where there is none, a `[DATA NEEDED: what]` marker or a question to the student. "Punchier" never means one-sentence paragraphs.
 
 ## Defaults by register
 
 | Register | Formality | Warmth | Directness | Confidence | Concision |
 |---|---|---|---|---|---|
-| Report | high | low | high | as the evidence | high |
-| Lab book | medium | none | high | as the evidence | high |
-| Essay | high | low | high | as the argument | medium |
-| Explainer | medium | medium | medium | as the evidence | medium |
-| Message | as the relationship | medium | high | medium | high |
-| Application | medium-high | medium | high | high, within the evidence | high |
-| Post | low-medium | medium | high | medium | high |
+| Report | high | low | high | high | high |
+| Lab book | medium | none | high | medium | high |
+| Essay | high | low | high | high | medium |
+| Explainer | medium | medium | medium | medium | medium |
+| Message | medium | medium | high | medium | high |
+| Application | high | medium | high | high | high |
+| Post | medium | medium | high | medium | high |
 
-A register's own file and a rubric outrank this table. A request outranks both, within the limits above.
+Confidence at any setting stays within what the evidence holds, as its dial says. A message's formality moves one setting up for someone the student has not written to before or for a committee, and one down for a teammate. A register's own file and a rubric outrank this table. A request outranks both, within the limits above.
 
 ## Conflicting requests
 
