@@ -70,7 +70,7 @@ A reviewer's finding is evidence about the text, so it is settled by changing th
 - **An examiner's change that needs no new information.** Make it.
 - **An examiner's change that needs data, results or sources the student has not supplied.** Do not invent them to reach a band. Add `[DATA NEEDED: what]` where the gap is, or list the change in the delivery note for the student.
 
-After the changes, run `check.py` again and, if the citations changed, `verify.py --draft`. Each pass runs once per draft. Run one again only when a finding made the draft restructure, and then only that pass.
+Fixes tend to add words: a gloss, a qualifier, a step of reasoning. Pay for them by cutting elsewhere. Count the words again: the draft must end within any limit the request or rubric sets, and without one, no more than a tenth longer than before the passes. A fix that cannot fit goes in the delivery note instead. After the changes, run `check.py` again and, if the citations changed, `verify.py --draft`. Each pass runs once per draft. Run one again only when a finding made the draft restructure, and then only that pass.
 
 ## Without subagents
 
