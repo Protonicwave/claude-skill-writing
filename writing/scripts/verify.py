@@ -122,7 +122,7 @@ _CROSSREF_TYPES = {
     "monograph": ("book", ""),
     "edited-book": ("book", ""),
 }
-_CROSSREF_PUBLISHED = frozenset({"incollection", "book"})
+_CROSSREF_TYPES_WITH_PUBLISHER = frozenset({"incollection", "book"})
 # DataCite resourceTypeGeneral, likewise. The venue of a work of any other type
 # is its publisher, so it is written as the publisher.
 _DATACITE_OTHER = ("misc", "")
@@ -132,7 +132,7 @@ _DATACITE_TYPES = {
     "BookChapter": ("incollection", "booktitle"),
     "Book": ("book", ""),
 }
-_DATACITE_PUBLISHED = frozenset({"incollection", "book", "misc"})
+_DATACITE_TYPES_WITH_PUBLISHER = frozenset({"incollection", "book", "misc"})
 _LATEX_ESCAPES = str.maketrans(
     {
         "\\": r"\textbackslash{}",
@@ -879,7 +879,7 @@ def _datacite_bib(
         issue=_text(container.get("issue")) or None,
         pages="--".join(page for page in (first, last) if page) or None,
         publisher=publisher
-        if publisher and entry_type in _DATACITE_PUBLISHED
+        if publisher and entry_type in _DATACITE_TYPES_WITH_PUBLISHER
         else None,
     )
 
@@ -1026,7 +1026,7 @@ def _crossref_bib(work: dict[str, Any]) -> BibDetails:
         or _text(work.get("article-number"))
         or None,
         publisher=publisher
-        if publisher and entry_type in _CROSSREF_PUBLISHED
+        if publisher and entry_type in _CROSSREF_TYPES_WITH_PUBLISHER
         else None,
     )
 
