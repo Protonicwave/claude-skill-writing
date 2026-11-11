@@ -639,12 +639,25 @@ class ResponseCache:
         return body
 
     def save(self) -> None:
-        """Write the unexpired entries atomically; a failure is only reported."""
-        entries = {
-            url: {"fetched": response.fetched, "body": _encode_body(response.body)}
-            for url, response in self._entries.items()
-            if self._is_fresh(response)
-        }
+        """Write the unexpired entries atomically; a failure is only reported.
+
+        The file stays within MAX_CACHE_FILE_BYTES, which `_load` enforces, by
+        dropping the oldest entries first.
+        """
+        fresh = sorted(
+            (item for item in self._entries.items() if self._is_fresh(item[1])),
+            key=lambda item: item[1].fetched,
+            reverse=True,
+        )
+        entries: dict[str, object] = {}
+        size_bytes = len(json.dumps({"format": CACHE_FORMAT, "entries": {}}))
+        for url, response in fresh:
+            entry = {"fetched": response.fetched, "body": _encode_body(response.body)}
+            # The fragment counts its own braces, so the sum never undercounts.
+            size_bytes += len(json.dumps({url: entry}))
+            if size_bytes > MAX_CACHE_FILE_BYTES:
+                break
+            entries[url] = entry
         document = json.dumps({"format": CACHE_FORMAT, "entries": entries})
         temporary = self._path.with_name(self._path.name + ".tmp")
         try:

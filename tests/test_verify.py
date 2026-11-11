@@ -1430,6 +1430,30 @@ def _oversized(path: Path) -> None:
     write_cache(path, {URL: {"fetched": START, "body": encoded(b"x" * 100)}})
 
 
+def test_save_drops_the_oldest_entries_to_stay_under_the_file_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    path = tmp_path / "c.json"
+    urls = [f"https://api.example.org/works/{n}" for n in range(3)]
+    registry = FakeRegistry([("example.org", b"x" * 100)] * 3)
+    clock = FakeClock()
+    writer = cache_over(registry, path, clock)
+    for url in urls:
+        writer(url)
+        clock.now += 1
+    writer.save()
+    full_size = path.stat().st_size
+    monkeypatch.setattr(verify_module, "MAX_CACHE_FILE_BYTES", full_size - 1)
+    writer.save()
+    assert path.stat().st_size <= full_size - 1
+    assert stored_urls(path) == set(urls[1:])
+    reader = cache_over(FakeRegistry([]), path, clock)
+    assert reader(urls[2]) == b"x" * 100
+    assert capsys.readouterr().err == ""
+
+
 @pytest.mark.parametrize("damage", [_corrupt, _foreign, _wrong_shape, _oversized])
 def test_an_unusable_cache_file_is_reported_ignored_and_replaced(
     damage: Callable[[Path], None],
@@ -1448,6 +1472,8 @@ def test_an_unusable_cache_file_is_reported_ignored_and_replaced(
     err = capsys.readouterr().err
     assert err.count("\n") == 1
     assert str(path) in err
+    # The tiny limit only made the old file unusable; the replacement may be larger.
+    monkeypatch.undo()
     cache.save()
     assert stored_urls(path) == {URL}
 
