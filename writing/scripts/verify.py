@@ -72,8 +72,9 @@ USER_AGENT = "writing-skill-verify/0.1"
 CROSSREF_WORKS = "https://api.crossref.org/works/"
 DATACITE_DOIS = "https://api.datacite.org/dois/"
 OPENALEX_WORKS = "https://api.openalex.org/works/doi:"
-OPENALEX_FIELDS = "?select=is_retracted,abstract_inverted_index"
+OPENALEX_FIELDS = "?select=is_retracted,abstract_inverted_index,open_access"
 ARXIV_QUERY = "https://export.arxiv.org/api/query?id_list="
+ARXIV_ABS = "https://arxiv.org/abs/"
 ARXIV_HOST = "export.arxiv.org"
 ARXIV_DOI_PREFIX = "10.48550/arxiv."
 
@@ -526,6 +527,7 @@ class Record:
     notices: tuple[Notice, ...]
     retraction_checked: str
     version: str
+    open_text: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -603,6 +605,7 @@ def _datacite_record(url: str, attributes: dict[str, Any]) -> Record:
         notices=(),
         retraction_checked="DataCite",
         version="version of record",
+        open_text=None,
     )
 
 
@@ -691,6 +694,7 @@ def _crossref_record(url: str, work: dict[str, Any]) -> Record:
         notices=_crossref_notices(_as_list(work.get("updated-by"))),
         retraction_checked="Crossref",
         version="version of record",
+        open_text=None,
     )
 
 
@@ -739,7 +743,16 @@ def _with_openalex(record: Record, url: str, fetch: Fetch) -> Record:
         notices=notices,
         texts=texts,
         retraction_checked=f"{registry} and OpenAlex",
+        open_text=_open_access_url(work.get("open_access")),
     )
+
+
+def _open_access_url(value: object) -> str | None:
+    """OpenAlex's free full-text URL, if it is a web address."""
+    url = _as_dict(value).get("oa_url")
+    if isinstance(url, str) and url.startswith(("https://", "http://")):
+        return url
+    return None
 
 
 def _from_inverted_index(index: object) -> str:
@@ -818,7 +831,7 @@ def _look_up_arxiv(arxiv: ArxivId, fetch: Fetch) -> Record | Missing:
         if isinstance(older, Missing):
             return older
         cited = older
-    return _arxiv_record(url, cited, latest)
+    return _arxiv_record(url, arxiv.base, cited, latest)
 
 
 def _arxiv_entry(url: str, fetch: Fetch) -> _ArxivEntry | Missing:
@@ -867,7 +880,9 @@ def _leading_year(timestamp: str) -> int | None:
     return int(year) if len(year) == YEAR_DIGITS and year.isdigit() else None
 
 
-def _arxiv_record(url: str, cited: _ArxivEntry, latest: _ArxivEntry) -> Record:
+def _arxiv_record(
+    url: str, base: str, cited: _ArxivEntry, latest: _ArxivEntry
+) -> Record:
     if cited.version == latest.version:
         version = f"v{cited.version} (latest)"
     else:
@@ -907,6 +922,7 @@ def _arxiv_record(url: str, cited: _ArxivEntry, latest: _ArxivEntry) -> Record:
         notices=notices,
         retraction_checked="arXiv comments",
         version=version,
+        open_text=f"{ARXIV_ABS}{base}v{cited.version}",
     )
 
 
@@ -953,6 +969,7 @@ class Verification:
     claims: tuple[ClaimCheck, ...]
     notices: tuple[Notice, ...]
     retraction_checked: str
+    open_text: str | None
 
 
 def verify(source: CitedSource, fetch: Fetch) -> Verification:
@@ -975,13 +992,24 @@ def verify(source: CitedSource, fetch: Fetch) -> Verification:
         claims,
         lookup.notices,
         lookup.retraction_checked,
+        lookup.open_text,
     )
 
 
 def unchecked(source: CitedSource, query_url: str, reason: str) -> Verification:
     """A source no record was compared with, and why."""
     return Verification(
-        source, Status.UNVERIFIED, query_url, reason, "", "", (), (), (), "not checked"
+        source,
+        Status.UNVERIFIED,
+        query_url,
+        reason,
+        "",
+        "",
+        (),
+        (),
+        (),
+        "not checked",
+        None,
     )
 
 
@@ -1116,7 +1144,10 @@ def log_row(verification: Verification, retrieved: date) -> str:
         verification.reason or _field_summary(verification),
         _retraction_summary(verification, retrieved),
         verification.version or "not checked",
-        "<br>".join(_claim_summary(claim) for claim in verification.claims)
+        "<br>".join(
+            _claim_summary(claim, verification.open_text)
+            for claim in verification.claims
+        )
         or "not checked",
         verification.status.value,
     )
@@ -1159,9 +1190,11 @@ def _retraction_summary(verification: Verification, retrieved: date) -> str:
     return f"none found in {verification.retraction_checked} on {retrieved.isoformat()}"
 
 
-def _claim_summary(claim: ClaimCheck) -> str:
-    where = claim.found_in or "quote not found in the text read"
-    return f"{claim.claim} ({where})"
+def _claim_summary(claim: ClaimCheck, open_text: str | None) -> str:
+    if claim.found_in is not None:
+        return f"{claim.claim} ({claim.found_in})"
+    hint = f"; full text may be at {open_text}" if open_text else ""
+    return f"{claim.claim} (quote not found in the text read{hint})"
 
 
 def _cell(text: str) -> str:

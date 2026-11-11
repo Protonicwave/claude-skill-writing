@@ -113,13 +113,23 @@ def datacite(**changes: object) -> bytes:
     return json.dumps({"data": {"attributes": present}}).encode()
 
 
-def openalex(*, retracted: bool = False, abstract: str | None = None) -> bytes:
+def openalex(
+    *,
+    retracted: bool = False,
+    abstract: str | None = None,
+    oa_url: object = None,
+) -> bytes:
+    """An OpenAlex work. An `oa_url` of None leaves out `open_access`."""
     index: dict[str, list[int]] = {}
     for position, word in enumerate((abstract or "").split()):
         index.setdefault(word, []).append(position)
-    return json.dumps(
-        {"is_retracted": retracted, "abstract_inverted_index": index or None}
-    ).encode()
+    work: dict[str, object] = {
+        "is_retracted": retracted,
+        "abstract_inverted_index": index or None,
+    }
+    if oa_url is not None:
+        work["open_access"] = {"oa_url": oa_url}
+    return json.dumps(work).encode()
 
 
 def atom(
@@ -717,6 +727,69 @@ def test_quote_absent_from_text_read_leaves_claim_not_checked() -> None:
     assert verification.claims[0].found_in is None
 
 
+MISSING_QUOTE = [
+    {"claim": "Computers will replace all.", "quote": "Quantum computers will win."}
+]
+FULL_TEXT_URL = "https://example.org/feynman.pdf"
+
+
+def row_for(verification: Verification) -> str:
+    return log_row(verification, date(2026, 11, 8))
+
+
+def test_missing_quote_row_links_openalex_open_access_text() -> None:
+    registry = doi_registry(alex=openalex(oa_url=FULL_TEXT_URL))
+    row = row_for(check({"evidence": MISSING_QUOTE}, registry))
+    assert (
+        "Computers will replace all. (quote not found in the text read; "
+        f"full text may be at {FULL_TEXT_URL})"
+    ) in row
+
+
+def test_found_quote_row_does_not_link_open_access_text() -> None:
+    registry = doi_registry(alex=openalex(oa_url=FULL_TEXT_URL))
+    row = row_for(check({}, registry))
+    assert FULL_TEXT_URL not in row
+    assert "full text may be" not in row
+
+
+def test_missing_quote_without_open_access_text_is_unchanged() -> None:
+    row = row_for(check({"evidence": MISSING_QUOTE}, doi_registry()))
+    assert "(quote not found in the text read)" in row
+    assert "full text may be" not in row
+
+
+@pytest.mark.parametrize("oa_url", ["ftp://x", 42, ["https://x.org"], ""])
+def test_open_access_url_that_is_not_http_gives_no_link(oa_url: object) -> None:
+    registry = doi_registry(alex=openalex(oa_url=oa_url))
+    row = row_for(check({"evidence": MISSING_QUOTE}, registry))
+    assert "(quote not found in the text read)" in row
+
+
+def test_openalex_outage_gives_no_link_and_no_error() -> None:
+    registry = doi_registry(alex=RegistryUnavailableError("HTTP 503"))
+    verification = check({"evidence": MISSING_QUOTE}, registry)
+    assert verification.status is Status.CLAIM_NOT_CHECKED
+    assert "full text may be" not in row_for(verification)
+
+
+def test_pipe_in_open_access_url_is_escaped() -> None:
+    registry = doi_registry(alex=openalex(oa_url="https://example.org/a|b"))
+    row = row_for(check({"evidence": MISSING_QUOTE}, registry))
+    assert "https://example.org/a\\|b)" in row
+
+
+def test_datacite_source_with_missing_quote_links_openalex_text() -> None:
+    registry = datacite_registry(datacite(), openalex(oa_url=FULL_TEXT_URL))
+    row = row_for(check({"evidence": MISSING_QUOTE}, registry))
+    assert f"full text may be at {FULL_TEXT_URL})" in row
+
+
+def test_unchecked_source_has_no_open_text() -> None:
+    verification = check({}, datacite_registry(None))
+    assert verification.open_text is None
+
+
 def test_quote_is_case_sensitive() -> None:
     evidence = [{"claim": "x", "quote": FEYNMAN_QUOTE.upper()}]
     verification = check({"evidence": evidence}, doi_registry())
@@ -825,6 +898,42 @@ def test_arxiv_quote_from_another_version_is_not_checked() -> None:
     )
     verification = check_arxiv({"id": "1706.03762v1"}, registry)
     assert verification.status is Status.CLAIM_NOT_CHECKED
+
+
+def test_arxiv_missing_quote_row_links_abstract_page_of_latest_version() -> None:
+    registry = FakeRegistry(
+        [("id_list=1706.03762", atom(version=7, summary=ATTENTION_V7))]
+    )
+    row = row_for(check_arxiv({"evidence": MISSING_QUOTE}, registry))
+    assert "full text may be at https://arxiv.org/abs/1706.03762v7)" in row
+
+
+def test_arxiv_missing_quote_row_links_the_cited_older_version() -> None:
+    registry = FakeRegistry(
+        [
+            ("id_list=1706.03762v1", atom(version=1, summary=ATTENTION_V1)),
+            ("id_list=1706.03762", atom(version=7, summary=ATTENTION_V7)),
+        ]
+    )
+    row = row_for(check_arxiv({"id": "1706.03762v1"}, registry))
+    assert "full text may be at https://arxiv.org/abs/1706.03762v1)" in row
+
+
+def test_arxiv_old_style_identifier_link_keeps_archive_and_number() -> None:
+    registry = FakeRegistry(
+        [("id_list=hep-th/9901001", atom(version=2, summary=ATTENTION_V7))]
+    )
+    row = row_for(
+        check_arxiv({"id": "hep-th/9901001", "evidence": MISSING_QUOTE}, registry)
+    )
+    assert "full text may be at https://arxiv.org/abs/hep-th/9901001v2)" in row
+
+
+def test_arxiv_found_quote_row_has_no_link() -> None:
+    registry = FakeRegistry(
+        [("id_list=1706.03762", atom(version=7, summary=ATTENTION_V7))]
+    )
+    assert "arxiv.org/abs" not in row_for(check_arxiv({}, registry))
 
 
 def test_arxiv_journal_version_is_reported() -> None:
