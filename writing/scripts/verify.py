@@ -2085,9 +2085,14 @@ def _cache_path(sources: str) -> Path:
 
 
 def _check_all(
-    sources: Sequence[CitedSource], fetch: Fetch, verifications: list[Verification]
-) -> int:
-    """Check each source, adding each verification to `verifications` as made."""
+    sources: Sequence[CitedSource], fetch: Fetch
+) -> tuple[list[Verification], int]:
+    """Check each source, printing each row as made.
+
+    Returns the verifications made, which after a fault are those before it,
+    and the exit code.
+    """
+    verifications: list[Verification] = []
     retrieved = date.today()
     print(LOG_HEADER, flush=True)
     deadline = time.monotonic() + MAX_RUN_SECONDS
@@ -2105,11 +2110,12 @@ def _check_all(
             # The process boundary: an unforeseen fault is reported once, and
             # the rows already printed stay valid.
             print(f"verify.py stopped at {source.key}: {err!r}", file=sys.stderr)
-            return 3
+            return verifications, 3
         verifications.append(verification)
         print(log_row(verification, retrieved), flush=True)
     print(f"\n{log_summary(verifications)}")
-    return 0 if all(v.status is Status.VERIFIED for v in verifications) else 1
+    all_verified = all(v.status is Status.VERIFIED for v in verifications)
+    return verifications, 0 if all_verified else 1
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -2166,8 +2172,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"cannot audit {args.draft}: {err}", file=sys.stderr)
         return 2
 
-    verifications: list[Verification] = []
-    code = _run_checks(sources, args, verifications)
+    verifications, code = _run_checks(sources, args.sources, refresh=args.refresh)
     is_latex = args.draft is not None and args.draft.suffix.lower() == ".tex"
     code = _audited_code(draft, is_latex, sources, verifications, code)
     if args.bib is not None and not _write_bib(sources, verifications, args.bib):
@@ -2191,16 +2196,14 @@ def _audited_code(
 
 
 def _run_checks(
-    sources: Sequence[CitedSource],
-    args: argparse.Namespace,
-    verifications: list[Verification],
-) -> int:
+    sources: Sequence[CitedSource], sources_path: str, *, refresh: bool
+) -> tuple[list[Verification], int]:
     client = RegistryClient()
-    if args.sources == "-":
-        return _check_all(sources, client, verifications)
-    cache = ResponseCache(client, _cache_path(args.sources), refresh=args.refresh)
+    if sources_path == "-":
+        return _check_all(sources, client)
+    cache = ResponseCache(client, _cache_path(sources_path), refresh=refresh)
     try:
-        return _check_all(sources, cache, verifications)
+        return _check_all(sources, cache)
     finally:
         cache.save()
 
