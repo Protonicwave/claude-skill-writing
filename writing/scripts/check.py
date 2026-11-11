@@ -1,8 +1,11 @@
 """Flag the measurable signs of machine-written prose in a draft.
 
 Usage:
-    check.py <path> [--format plain|markdown|latex]
+    check.py <path> [--format plain|markdown|latex] [--outline]
     check.py - [--format ...]        read the draft from standard input
+
+--outline prints the first sentence of each body paragraph with its line,
+so the argument can be read in order, and runs no checks.
 
 The format follows the extension (.md is markdown, .tex is latex, anything
 else is plain) unless --format is given. Exits 1 if any error is found, 2 if
@@ -473,6 +476,15 @@ def find_issues(text: str, fmt: Format) -> list[Issue]:
     return sorted(issues, key=lambda issue: issue.line)
 
 
+def outline(text: str, fmt: Format) -> list[tuple[int, str]]:
+    """The first sentence of each body paragraph, with the line it starts on."""
+    return [
+        (paragraph.lines[0].number, split_sentences(paragraph.text)[0])
+        for paragraph in paragraphs(prose_lines(text, fmt))
+        if not paragraph.is_heading
+    ]
+
+
 def format_for(path: str) -> Format:
     suffix = Path(path).suffix.lower()
     return {
@@ -505,6 +517,11 @@ def main(argv: list[str] | None = None) -> int:
         choices=[fmt.value for fmt in Format],
         help="override the format the extension implies",
     )
+    parser.add_argument(
+        "--outline",
+        action="store_true",
+        help="print each body paragraph's first sentence instead of checking",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -517,9 +534,12 @@ def main(argv: list[str] | None = None) -> int:
     if isinstance(sys.stdout, io.TextIOWrapper):
         sys.stdout.reconfigure(errors="backslashreplace")
     name = "<stdin>" if args.path == "-" else args.path
-    issues = find_issues(
-        text, Format(args.format) if args.format else format_for(args.path)
-    )
+    fmt = Format(args.format) if args.format else format_for(args.path)
+    if args.outline:
+        for line, sentence in outline(text, fmt):
+            print(f"{name}:{line}: {sentence}")
+        return 0
+    issues = find_issues(text, fmt)
     for issue in issues:
         print(f"{name}:{issue.line}: {issue.severity} [{issue.rule}] {issue.message}")
     return 1 if any(issue.severity is Severity.ERROR for issue in issues) else 0

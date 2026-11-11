@@ -2,7 +2,15 @@ import time
 from pathlib import Path
 
 import pytest
-from check import Format, Issue, Severity, find_issues, main, split_sentences
+from check import (
+    Format,
+    Issue,
+    Severity,
+    find_issues,
+    main,
+    outline,
+    split_sentences,
+)
 
 EM_DASH = "\u2014"
 EN_DASH = "\u2013"
@@ -355,3 +363,41 @@ def test_repeated_latex_line_breaks_are_checked_quickly() -> None:
     start = time.perf_counter()
     find_issues("\\\\[2pt] word " * 16000, Format.LATEX)
     assert time.perf_counter() - start < 2.0
+
+
+OUTLINED_DRAFT = (
+    "# Method\n"
+    "\n"
+    "We swept the pump power. The camera recorded each step.\n"
+    "\n"
+    "Above 1.6 W the pattern split\n"
+    "into two lobes. That was the threshold.\n"
+    "\n"
+    "- one item\n"
+)
+
+
+def test_outline_gives_each_body_paragraph_first_sentence_with_its_line() -> None:
+    assert outline(OUTLINED_DRAFT, Format.MARKDOWN) == [
+        (3, "We swept the pump power."),
+        (5, "Above 1.6 W the pattern split into two lobes."),
+        (8, "one item"),
+    ]
+
+
+@pytest.mark.parametrize("text", ["", "# Only a heading\n"])
+def test_outline_of_a_draft_without_body_is_empty(text: str) -> None:
+    assert outline(text, Format.MARKDOWN) == []
+
+
+def test_cli_outline_prints_sentences_and_runs_no_checks(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    draft = tmp_path / "draft.md"
+    draft.write_text(f"The fit failed{EM_DASH}badly. It was redone.", encoding="utf-8")
+    assert main([str(draft), "--outline"]) == 0
+    assert capsys.readouterr().out == f"{draft}:1: The fit failed{EM_DASH}badly.\n"
+
+
+def test_cli_outline_of_unreadable_draft_exits_2(tmp_path: Path) -> None:
+    assert main([str(tmp_path / "absent.md"), "--outline"]) == 2
