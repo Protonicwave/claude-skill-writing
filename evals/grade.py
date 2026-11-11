@@ -225,11 +225,7 @@ def _is_one_sentence(block: str) -> bool:
 
 def _prose_blocks(text: str) -> list[str]:
     blocks = (block.strip() for block in re.split(r"\n\s*\n", text))
-    return [
-        block
-        for block in blocks
-        if block and not NOT_PROSE_BLOCK.match(block) and not HASHTAG.fullmatch(block)
-    ]
+    return [block for block in blocks if block and not NOT_PROSE_BLOCK.match(block)]
 
 
 def _phrases_found(phrases: tuple[str, ...], text: str) -> list[str]:
