@@ -1729,12 +1729,17 @@ class _Span:
     keys: tuple[str, ...]
 
 
-class _Lines:
-    def __init__(self, text: str) -> None:
-        self._breaks = [match.start() for match in re.finditer("\n", text)]
+_LineOf = Callable[[int], int]
 
-    def number(self, offset: int) -> int:
-        return bisect.bisect_left(self._breaks, offset) + 1
+
+def _line_of(text: str) -> _LineOf:
+    """A function from a character offset in `text` to its 1-based line number."""
+    breaks = [match.start() for match in re.finditer("\n", text)]
+
+    def line_number(offset: int) -> int:
+        return bisect.bisect_left(breaks, offset) + 1
+
+    return line_number
 
 
 def audit_draft(
@@ -1751,7 +1756,7 @@ def audit_draft(
     """
     if latex:
         text = _LATEX_COMMENT.sub(_keep_escape, text)
-    lines = _Lines(text)
+    line_of = _line_of(text)
     by_key = {source.key: source for source in sources}
     cites = _cite_spans(text, by_key.keys())
     markers = list(_MARKER.finditer(text))
@@ -1763,13 +1768,13 @@ def audit_draft(
     uncited: tuple[str, ...] = ()
     if cites:
         statuses = {v.source.key: v.status for v in verifications}
-        findings += _cite_findings(cites, lines, by_key, statuses)
-        findings += _number_findings(text, spans, by_key, lines)
+        findings += _cite_findings(cites, line_of, by_key, statuses)
+        findings += _number_findings(text, spans, by_key, line_of)
         cited = {key for span in cites for key in span.keys}
         if ALL_SOURCES_KEY not in cited:
             uncited = tuple(key for key in by_key if key not in cited)
     findings += (
-        AuditFinding(lines.number(m.start()), Severity.MARKER, _squash(m.group()))
+        AuditFinding(line_of(m.start()), Severity.MARKER, _squash(m.group()))
         for m in markers
     )
     ordered = sorted(dict.fromkeys(findings), key=lambda finding: finding.line)
@@ -1817,12 +1822,12 @@ def _split_keys(keys: str) -> tuple[str, ...]:
 
 def _cite_findings(
     cites: Sequence[_Span],
-    lines: _Lines,
+    line_of: _LineOf,
     by_key: dict[str, CitedSource],
     statuses: dict[str, Status],
 ) -> list[AuditFinding]:
     found = (
-        _key_finding(lines.number(span.start), key, by_key, statuses)
+        _key_finding(line_of(span.start), key, by_key, statuses)
         for span in cites
         for key in span.keys
     )
@@ -1866,7 +1871,7 @@ def _number_findings(
     text: str,
     spans: Sequence[_Span],
     by_key: dict[str, CitedSource],
-    lines: _Lines,
+    line_of: _LineOf,
 ) -> list[AuditFinding]:
     quoted = {
         key: {n for evidence in source.evidence for n in _numbers(evidence.quote)}
@@ -1885,7 +1890,7 @@ def _number_findings(
         names = ", ".join(f"`{key}`" for key in keys)
         findings += (
             AuditFinding(
-                lines.number(offset),
+                line_of(offset),
                 Severity.WARNING,
                 f"{number} appears in no quote from {names}",
             )
