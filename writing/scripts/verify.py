@@ -2004,11 +2004,15 @@ def _counted(number: int, noun: str) -> str:
 # Command line
 
 
-def _bib_path_problem(path: Path) -> str | None:
+def _bib_path_problem(path: Path, sources: str, draft: Path | None) -> str | None:
     if path.is_dir():
         return "it is a directory"
     if not path.parent.is_dir():
         return f"the folder {path.parent} does not exist"
+    if sources != "-" and path.resolve() == Path(sources).resolve():
+        return "it is the sources file"
+    if draft is not None and path.resolve() == draft.resolve():
+        return "it is the draft file"
     return None
 
 
@@ -2112,7 +2116,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    problem = None if args.bib is None else _bib_path_problem(args.bib)
+    problem = (
+        None
+        if args.bib is None
+        else _bib_path_problem(args.bib, args.sources, args.draft)
+    )
     if problem is not None:
         print(f"cannot write {args.bib}: {problem}", file=sys.stderr)
         return 2

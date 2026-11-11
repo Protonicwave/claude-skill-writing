@@ -2011,6 +2011,35 @@ def test_main_bib_works_with_standard_input(
     assert bib.read_text(encoding="utf-8").startswith("@misc{Feynman1982,")
 
 
+@pytest.mark.parametrize(
+    ("bib_argument", "named"),
+    [
+        ("refs.jsonl", "sources"),
+        ("./refs.jsonl", "sources"),
+        ("draft.md", "draft"),
+        ("./draft.md", "draft"),
+    ],
+)
+def test_main_bib_naming_an_input_file_exits_2_before_any_request(
+    bib_argument: str,
+    named: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sources_text = json.dumps(entry())
+    (tmp_path / "refs.jsonl").write_text(sources_text, encoding="utf-8")
+    (tmp_path / "draft.md").write_text("Draft text.", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    registry = doi_registry()
+    argv = ["refs.jsonl", "--draft", "draft.md", "--bib", bib_argument]
+    assert run_main_with(registry, monkeypatch, argv) == 2
+    assert registry.requested == []
+    assert f"it is the {named} file" in capsys.readouterr().err
+    assert (tmp_path / "refs.jsonl").read_text(encoding="utf-8") == sources_text
+    assert (tmp_path / "draft.md").read_text(encoding="utf-8") == "Draft text."
+
+
 def test_main_bib_in_a_missing_folder_exits_2_before_any_request(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
