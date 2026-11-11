@@ -1672,6 +1672,8 @@ NO_CITES_NOTICE = (
 _LATEX_CITE = re.compile(
     r"\\[A-Za-z]*[Cc]ite[A-Za-z]*\*?(?:\s*\[[^\[\]]*\]){0,2}\s*\{([^{}]*)\}"
 )
+# An escaped character (`\%` included) is kept; an unescaped `%` runs to the line end.
+_LATEX_COMMENT = re.compile(r"\\.|%[^\n]*")
 _PANDOC_BRACKET = re.compile(r"\[([^\[\]]*)\]")
 _PANDOC_KEY = re.compile(r"(?<!\w)-?@(\w(?:\w|[:.#$%&+?<>~/-](?=\w))*)")
 _MARKER = re.compile(
@@ -1727,8 +1729,16 @@ def audit_draft(
     text: str,
     sources: Sequence[CitedSource],
     verifications: Sequence[Verification],
+    *,
+    latex: bool = False,
 ) -> DraftAudit:
-    """Check a draft's cites, numbers and gap markers against the verified sources."""
+    """Check a draft's cites, numbers and gap markers against the verified sources.
+
+    A LaTeX draft has its `%` comments dropped first, so a commented-out cite
+    is not audited. Line numbers are unchanged.
+    """
+    if latex:
+        text = _LATEX_COMMENT.sub(_keep_escape, text)
     lines = _Lines(text)
     cites = _cite_spans(text)
     markers = list(_MARKER.finditer(text))
@@ -1751,6 +1761,10 @@ def audit_draft(
     )
     ordered = sorted(dict.fromkeys(findings), key=lambda finding: finding.line)
     return DraftAudit(bool(cites), tuple(ordered), uncited)
+
+
+def _keep_escape(match: re.Match[str]) -> str:
+    return match.group() if match.group().startswith("\\") else ""
 
 
 def _squash(text: str) -> str:
@@ -2055,7 +2069,8 @@ def main(argv: list[str] | None = None) -> int:
 
     verifications: list[Verification] = []
     code = _run_checks(sources, args, verifications)
-    code = _audited_code(draft, sources, verifications, code)
+    is_latex = args.draft is not None and args.draft.suffix.lower() == ".tex"
+    code = _audited_code(draft, is_latex, sources, verifications, code)
     if args.bib is not None and not _write_bib(sources, verifications, args.bib):
         return 3
     return code
@@ -2063,6 +2078,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def _audited_code(
     draft: str | None,
+    is_latex: bool,
     sources: Sequence[CitedSource],
     verifications: Sequence[Verification],
     code: int,
@@ -2070,7 +2086,7 @@ def _audited_code(
     """Print the draft audit, and return the exit code it leaves."""
     if draft is None or code not in (0, 1):
         return code
-    audit = audit_draft(draft, sources, verifications)
+    audit = audit_draft(draft, sources, verifications, latex=is_latex)
     print(render_audit(audit))
     return 1 if audit.has_errors else code
 

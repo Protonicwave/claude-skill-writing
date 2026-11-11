@@ -2138,11 +2138,12 @@ def audited(
     draft: str,
     *entries: dict[str, object],
     statuses: dict[str, Status] | None = None,
+    latex: bool = False,
 ) -> DraftAudit:
     cited = sources(*(entries or (source_entry("a"),)))
     given = statuses or {}
     checks = [verification_for(s, given.get(s.key, Status.VERIFIED)) for s in cited]
-    return audit_draft(draft, cited, checks)
+    return audit_draft(draft, cited, checks, latex=latex)
 
 
 def found(audit: DraftAudit) -> list[tuple[int, str, str]]:
@@ -2155,6 +2156,45 @@ def missing_keys_in(draft: str) -> list[str]:
     return [
         f.text.split("`")[1] for f in audit.findings if f.severity is Severity.ERROR
     ]
+
+
+def missing_keys_in_latex(draft: str) -> list[str]:
+    audit = audited(draft, source_entry("zzz"), latex=True)
+    return [
+        f.text.split("`")[1] for f in audit.findings if f.severity is Severity.ERROR
+    ]
+
+
+def test_audit_ignores_a_cite_in_a_latex_comment() -> None:
+    audit = audited("Text.\n% see \\cite{gone}\nMore.", latex=True)
+    assert not audit.has_cites
+    assert found(audit) == []
+
+
+def test_audit_does_not_blame_a_commented_number_on_the_previous_cite() -> None:
+    draft = "Done \\cite{a}.\n% It was 99.9 percent.\nNext."
+    assert found(audited(draft, latex=True)) == []
+
+
+def test_audit_keeps_an_escaped_percent_sign_in_a_latex_draft() -> None:
+    draft = r"It was 46.1\% \cite{a} % but \cite{gone}"
+    assert found(audited(draft, latex=True)) == [
+        (1, "warning", "46.1 appears in no quote from `a`")
+    ]
+
+
+def test_audit_reads_a_comment_after_an_escaped_backslash() -> None:
+    assert missing_keys_in_latex(r"a \\% \cite{x}") == []
+
+
+def test_audit_keeps_a_percent_sign_in_a_markdown_draft() -> None:
+    audit = audited("It was 46.1% [@a].")
+    assert found(audit) == [(1, "warning", "46.1 appears in no quote from `a`")]
+
+
+def test_audit_keeps_line_numbers_after_stripping_latex_comments() -> None:
+    audit = audited("% one\n% two\n\\cite{gone}", latex=True)
+    assert [f.line for f in audit.findings] == [3]
 
 
 def test_audit_reports_a_cited_key_missing_from_the_sources() -> None:
@@ -2414,6 +2454,17 @@ def test_main_prints_the_audit_after_the_summary(
     out = capsys.readouterr().out
     assert out.index("1 of 1 sources verified.") < out.index("## Draft audit")
     assert "- line 2: open marker [DATA NEEDED: x]" in out
+
+
+@pytest.mark.parametrize(("name", "exit_code"), [("draft.tex", 0), ("draft.md", 1)])
+def test_main_drops_percent_comments_from_a_tex_draft_only(
+    name: str, exit_code: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    argv = draft_argv(tmp_path, "See \\cite{Feynman1982}.\n% \\cite{jones2020}\n")
+    renamed = tmp_path / name
+    (tmp_path / "draft.md").replace(renamed)
+    argv[-1] = str(renamed)
+    assert run_main_with(doi_registry(), monkeypatch, argv) == exit_code
 
 
 def test_main_exits_1_when_every_source_verifies_but_a_cited_key_is_missing(
