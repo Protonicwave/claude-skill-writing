@@ -1915,11 +1915,15 @@ def _number_findings(
 
 
 def _needs_quote(number: str, years: set[str]) -> bool:
-    # float, not int: a string of thousands of digits overflows to inf
-    # rather than raising.
     if number in years:
         return False
-    return "." in number or float(number) > MAX_UNCHECKED_INTEGER
+    return "." in number or _is_above_unchecked_integer(number)
+
+
+def _is_above_unchecked_integer(digits: str) -> bool:
+    # float, not int: int() raises on a string of thousands of digits, where
+    # float() gives inf.
+    return float(digits) > MAX_UNCHECKED_INTEGER
 
 
 def _mask(text: str, spans: Sequence[_Span]) -> str:
