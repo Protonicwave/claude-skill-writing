@@ -1841,8 +1841,8 @@ def _key_finding(
         return AuditFinding(
             line, Severity.ERROR, f"`{key}` is cited but not in the sources"
         )
-    status = statuses.get(key)
-    if status is None or status is Status.VERIFIED:
+    status = statuses[key]
+    if status is Status.VERIFIED:
         return None
     severity = (
         Severity.WARNING if status is Status.CLAIM_NOT_CHECKED else Severity.ERROR
