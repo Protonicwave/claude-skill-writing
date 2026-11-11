@@ -2379,6 +2379,31 @@ def test_audit_keeps_a_cite_option_with_a_full_stop_inside_one_sentence() -> Non
     assert found(audit) == [(1, "warning", "46.1 appears in no quote from `a`")]
 
 
+def test_audit_ends_a_sentence_at_a_blank_line() -> None:
+    audit = audited("The count was 46.1\n\nWe cite it [@a].")
+    assert found(audit) == []
+
+
+def test_audit_ends_a_sentence_at_a_markdown_heading() -> None:
+    draft = "\n".join(["Earlier text", "## Section 4.5", "The yield was low [@a]."])
+    assert found(audited(draft)) == []
+
+
+def test_audit_does_not_end_a_sentence_at_a_single_line_wrap() -> None:
+    audit = audited("\n".join(["The count was", "46.1 percent", "of it [@a]."]))
+    assert [f.text for f in audit.findings] == ["46.1 appears in no quote from `a`"]
+
+
+def test_audit_does_not_take_a_hash_inside_a_line_for_a_heading() -> None:
+    audit = audited("Tag #5.5 and 46.1 percent [@a].")
+    assert [f.text.split()[0] for f in audit.findings] == ["5.5", "46.1"]
+
+
+def test_audit_checks_a_cite_inside_a_markdown_heading_still() -> None:
+    audit = audited("## Results [@gone]\n\nText.", source_entry("zzz"))
+    assert [f.line for f in audit.findings] == [1]
+
+
 def test_audit_starts_a_new_sentence_at_a_capital_or_a_backslash() -> None:
     draft = "It was 46.1 percent. \\citep{a} Next was 46.2 percent [@a]."
     assert found(audited(draft)) == [

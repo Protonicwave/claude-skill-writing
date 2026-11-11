@@ -1687,7 +1687,11 @@ GAP_MARKER = (
     r"\[(?:UNVERIFIED|CITATION NEEDED|CLAIM NOT CHECKED|DATA NEEDED)(?::[^\]]*)?\]"
 )
 _MARKER = re.compile(GAP_MARKER, re.IGNORECASE)
-_SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+(?=[A-Z\\])")
+# A sentence ends at terminal punctuation before a capital or backslash, at a
+# blank line, and around a Markdown heading line, which belongs to no sentence.
+_SENTENCE_BREAK = re.compile(
+    r"(?<=[.!?])\s+(?=[A-Z\\])|\n[ \t]*\n\s*|^#{1,6}[ \t].*$", re.MULTILINE
+)
 _THOUSANDS_COMMA = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")
 
