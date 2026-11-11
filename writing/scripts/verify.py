@@ -839,7 +839,7 @@ def _datacite_record(url: str, attributes: dict[str, Any]) -> Record:
         query_url=url,
         titles=titles,
         authors=tuple(
-            _datacite_surname(creator)
+            _datacite_creator(creator).surname
             for creator in _as_list(attributes.get("creators"))
             if isinstance(creator, dict)
         ),
@@ -886,16 +886,10 @@ def _datacite_bib(
 
 def _datacite_bib_author(creator: object) -> str:
     """A creator in BibTeX name form, or "" when it has no name."""
-    parts = _as_dict(creator)
-    name = _text(parts.get("name"))
-    family = _text(parts.get("familyName"))
-    if family and parts.get("nameType") != "Organizational":
-        return _bib_person(family, _text(parts.get("givenName")))
-    # A personal name without its parts is written "Family, Given"; anything
-    # else is a group, which BibTeX would otherwise split into given and family.
-    if "," in name and parts.get("nameType") != "Organizational":
-        return _latex_escape(name)
-    return _bib_organisation(name)
+    parsed = _datacite_creator(creator)
+    if not parsed.is_person:
+        return _bib_organisation(parsed.name)
+    return _bib_person(parsed.surname, parsed.given)
 
 
 def _datacite_titles(value: object) -> tuple[str, ...]:
@@ -916,15 +910,28 @@ def _datacite_title_parts(value: object) -> tuple[str, str]:
     return first_of(None), first_of("Subtitle")
 
 
-def _datacite_surname(creator: dict[str, Any]) -> str:
-    family = _text(creator.get("familyName"))
+@dataclass(frozen=True, slots=True)
+class _Creator:
+    name: str
+    surname: str
+    given: str
+    # False for a group, which BibTeX would otherwise split into given and family.
+    is_person: bool
+
+
+def _datacite_creator(value: object) -> _Creator:
+    parts = _as_dict(value)
+    name = _text(parts.get("name"))
+    organisation = parts.get("nameType") == "Organizational"
+    family = _text(parts.get("familyName"))
     if family:
-        return family
+        given = _text(parts.get("givenName"))
+        return _Creator(name, family, given, is_person=not organisation)
+    if organisation:
+        return _Creator(name, name, "", is_person=False)
     # A personal name without its parts is written "Family, Given".
-    name = _text(creator.get("name"))
-    if creator.get("nameType") == "Organizational":
-        return name
-    return name.split(",")[0].strip()
+    surname, comma, given = name.partition(",")
+    return _Creator(name, surname.strip(), given.strip(), is_person=bool(comma))
 
 
 def _datacite_years(value: object) -> tuple[int, ...]:

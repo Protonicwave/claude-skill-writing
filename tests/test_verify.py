@@ -1862,6 +1862,15 @@ def test_bib_datacite_authors_are_in_name_form_and_organisations_are_braced() ->
     assert fields["author"] == r"{DESY \& Partners} and Feynman, R. and Dirac, Paul"
 
 
+def test_bib_datacite_creator_without_family_name_is_split_at_the_first_comma() -> None:
+    creators = [{"name": "Dirac,Paul"}]
+    cited: dict[str, object] = {"authors": ["Dirac"]}
+    verification = check(cited, datacite_registry(datacite(creators=creators)))
+    assert outcomes(verification)["authors"] is Outcome.MATCH
+    _, fields = parse_bib(render_bib([verification]))
+    assert fields["author"] == "Dirac, Paul"
+
+
 def test_bib_datacite_bare_name_without_a_comma_is_braced() -> None:
     creators = [{"name": "TensorFlow Developers"}]
     cited: dict[str, object] = {"authors": ["TensorFlow Developers"]}
