@@ -2257,6 +2257,54 @@ def test_audit_reads_each_latex_and_pandoc_cite_form(
     assert missing_keys_in(draft) == keys
 
 
+@pytest.mark.parametrize(
+    "draft",
+    [
+        "@a shows it.",
+        "As @a shows it.",
+        "Earlier.\n@a shows it.",
+        "As (@a) shows it.",
+        "As [see @a] shows it.",
+        "As {@a} shows it.",
+        "As -@a shows it.",
+        "As @a, and later.",
+        "As @a.",
+    ],
+)
+def test_audit_reads_a_bare_pandoc_citation_of_a_known_key(draft: str) -> None:
+    audit = audited(draft, source_entry("a"), source_entry("park2017"))
+    assert audit.has_cites
+    assert audit.uncited == ("park2017",)
+
+
+def test_audit_blames_a_number_next_to_a_bare_citation_on_its_key() -> None:
+    audit = audited("@a measured 46.1 percent.")
+    assert found(audit) == [(1, "warning", "46.1 appears in no quote from `a`")]
+
+
+@pytest.mark.parametrize(
+    "draft",
+    [
+        "Write to me@a.org today.",
+        "Write to a@a.org today.",
+        "The user @someone replied.",
+        "The word x@a here.",
+        'A quote "@a" here.',
+    ],
+)
+def test_audit_does_not_take_a_mention_or_email_as_a_bare_citation(
+    draft: str,
+) -> None:
+    audit = audited(draft, source_entry("a"))
+    assert not audit.has_cites
+    assert found(audit) == []
+
+
+def test_audit_does_not_report_an_unknown_bare_key_as_missing() -> None:
+    audit = audited("@someone shows it, and so does [@a].")
+    assert found(audit) == []
+
+
 def test_audit_does_not_take_an_email_address_or_mention_as_a_cite() -> None:
     audit = audited("Write to me@example.org or @someone, not [me@example.org].")
     assert not audit.has_cites

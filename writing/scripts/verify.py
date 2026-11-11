@@ -63,7 +63,7 @@ import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 from enum import StrEnum
@@ -1677,7 +1677,11 @@ _LATEX_CITE = re.compile(
 # An escaped character (`\%` included) is kept; an unescaped `%` runs to the line end.
 _LATEX_COMMENT = re.compile(r"\\.|%[^\n]*")
 _PANDOC_BRACKET = re.compile(r"\[([^\[\]]*)\]")
-_PANDOC_KEY = re.compile(r"(?<!\w)-?@(\w(?:\w|[:.#$%&+?<>~/-](?=\w))*)")
+_PANDOC_KEY_BODY = r"@(\w(?:\w|[:.#$%&+?<>~/-](?=\w))*)"
+_PANDOC_KEY = re.compile(r"(?<!\w)-?" + _PANDOC_KEY_BODY)
+# Outside brackets Pandoc reads `@key` only after a line start, a space or an
+# opening bracket, so `me@host` and `x.@y` are not citations.
+_PANDOC_BARE_KEY = re.compile(r"(?:^|(?<=[\s(\[{]))-?" + _PANDOC_KEY_BODY, re.MULTILINE)
 # Kept equal to check.py's GAP_MARKER: the scripts cannot import each other.
 GAP_MARKER = (
     r"\[(?:UNVERIFIED|CITATION NEEDED|CLAIM NOT CHECKED|DATA NEEDED)(?::[^\]]*)?\]"
@@ -1744,13 +1748,13 @@ def audit_draft(
     if latex:
         text = _LATEX_COMMENT.sub(_keep_escape, text)
     lines = _Lines(text)
-    cites = _cite_spans(text)
+    by_key = {source.key: source for source in sources}
+    cites = _cite_spans(text, by_key.keys())
     markers = list(_MARKER.finditer(text))
     spans = sorted(
         [*cites, *(_Span(m.start(), m.end(), ()) for m in markers)],
         key=lambda span: span.start,
     )
-    by_key = {source.key: source for source in sources}
     findings: list[AuditFinding] = []
     uncited: tuple[str, ...] = ()
     if cites:
@@ -1776,7 +1780,7 @@ def _squash(text: str) -> str:
     return _WHITESPACE.sub(" ", text)
 
 
-def _cite_spans(text: str) -> list[_Span]:
+def _cite_spans(text: str, source_keys: Collection[str]) -> list[_Span]:
     spans = [
         _Span(match.start(), match.end(), _split_keys(match.group(1)))
         for match in _LATEX_CITE.finditer(text)
@@ -1784,7 +1788,23 @@ def _cite_spans(text: str) -> list[_Span]:
     for bracket in _PANDOC_BRACKET.finditer(text):
         keys = tuple(_PANDOC_KEY.findall(bracket.group(1)))
         spans.append(_Span(bracket.start(), bracket.end(), keys))
+    spans += _bare_pandoc_spans(text, source_keys, spans)
     return sorted((span for span in spans if span.keys), key=lambda span: span.start)
+
+
+def _bare_pandoc_spans(
+    text: str, source_keys: Collection[str], taken: Sequence[_Span]
+) -> list[_Span]:
+    """Pandoc `@key` cites outside brackets.
+
+    Only a key in the sources counts, so a mention is not read as a citation.
+    """
+    return [
+        _Span(match.start(), match.end(), (match.group(1),))
+        for match in _PANDOC_BARE_KEY.finditer(text)
+        if match.group(1) in source_keys
+        and not any(span.start <= match.start() < span.end for span in taken)
+    ]
 
 
 def _split_keys(keys: str) -> tuple[str, ...]:
