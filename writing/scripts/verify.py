@@ -5,6 +5,8 @@ Usage:
     verify.py -               read the sources from standard input
     verify.py --refresh <sources.jsonl>
                               ignore cached responses and fetch again
+    verify.py --bib <references.bib> <sources.jsonl>
+                              also write a BibTeX file of the verified sources
 
 Each line of the input is one source as the draft cites it:
 
@@ -26,6 +28,12 @@ checked. Registry responses are kept for 24 hours in `<sources stem>.cache.json`
 beside the input file, so a rerun makes no repeat requests; standard input
 keeps no cache. Exits 0 if every source is verified, 1 if any is not, 2 if the
 input cannot be read or is invalid, and 3 if the run stops on a fault.
+
+`--bib` writes a BibTeX entry for each source whose cited fields all matched
+(VERIFIED or CLAIM NOT CHECKED), built from the registry record rather than
+the cited fields, so no reference is typed from memory. The file is written
+after the checks, also when the run stops on a fault, and a path whose folder
+does not exist exits 2 before any request. A write failure exits 3.
 """
 
 from __future__ import annotations
@@ -93,6 +101,44 @@ _HTTP_NOT_FOUND = 404
 _RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
 # Crossref notice types after which the work must not be cited for its content.
 _RETRACTING_NOTICES = frozenset({"retraction", "withdrawal", "removal"})
+# Crossref work type -> (BibTeX entry type, the field holding the venue). An
+# empty field name means the venue is not written.
+_CROSSREF_OTHER = ("misc", "howpublished")
+_CROSSREF_TYPES = {
+    "journal-article": ("article", "journal"),
+    "proceedings-article": ("inproceedings", "booktitle"),
+    "book-chapter": ("incollection", "booktitle"),
+    "book": ("book", ""),
+    "monograph": ("book", ""),
+    "edited-book": ("book", ""),
+}
+_CROSSREF_PUBLISHED = frozenset({"incollection", "book"})
+# DataCite resourceTypeGeneral, likewise. The venue of a work of any other type
+# is its publisher, so it is written as the publisher.
+_DATACITE_OTHER = ("misc", "")
+_DATACITE_TYPES = {
+    "JournalArticle": ("article", "journal"),
+    "ConferencePaper": ("inproceedings", "booktitle"),
+    "BookChapter": ("incollection", "booktitle"),
+    "Book": ("book", ""),
+}
+_DATACITE_PUBLISHED = frozenset({"incollection", "book", "misc"})
+_LATEX_ESCAPES = str.maketrans(
+    {
+        "\\": r"\textbackslash{}",
+        "&": r"\&",
+        "%": r"\%",
+        "$": r"\$",
+        "#": r"\#",
+        "_": r"\_",
+        "{": r"\{",
+        "}": r"\}",
+        "~": r"\textasciitilde{}",
+        "^": r"\textasciicircum{}",
+    }
+)
+# A hyphen or en dash between two page numbers is a range.
+_PAGE_RANGE = re.compile(r"(\d)\s*[-\N{EN DASH}]+\s*(\d)")
 _ET_AL = re.compile(r"^et\.?\s+al\.?$", re.IGNORECASE)
 _RETRACTED_TITLE_PREFIX = re.compile(
     r"^\s*retracted(?: article)?\s*:\s*", re.IGNORECASE
@@ -644,6 +690,27 @@ class Notice:
 
 
 @dataclass(frozen=True, slots=True)
+class BibDetails:
+    """What a BibTeX entry needs beyond the fields `Record` already holds.
+
+    `venue_field` names the BibTeX field for the record's venue, or is empty
+    when the venue is not written. `title` and `authors` are already LaTeX:
+    Crossref and DataCite text is escaped when the record is built, so the
+    braces round an organisation survive, while arXiv's is LaTeX as submitted
+    and kept. The other text is plain and is escaped when written.
+    """
+
+    entry_type: str
+    venue_field: str
+    title: str
+    authors: tuple[str, ...]
+    volume: str | None
+    issue: str | None
+    pages: str | None
+    publisher: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class Record:
     query_url: str
     titles: tuple[str, ...]
@@ -657,6 +724,7 @@ class Record:
     retraction_checked: str
     version: str
     open_text: str | None
+    bib: BibDetails
 
 
 @dataclass(frozen=True, slots=True)
@@ -735,10 +803,53 @@ def _datacite_record(url: str, attributes: dict[str, Any]) -> Record:
         retraction_checked="DataCite",
         version="version of record",
         open_text=None,
+        bib=_datacite_bib(attributes, container, _text(publisher)),
     )
 
 
+def _datacite_bib(
+    attributes: dict[str, Any], container: dict[str, Any], publisher: str
+) -> BibDetails:
+    resource_type = _as_dict(attributes.get("types")).get("resourceTypeGeneral")
+    entry_type, venue_field = _DATACITE_TYPES.get(str(resource_type), _DATACITE_OTHER)
+    first, last = _text(container.get("firstPage")), _text(container.get("lastPage"))
+    title, subtitle = _datacite_title_parts(attributes.get("titles"))
+    return BibDetails(
+        entry_type=entry_type,
+        venue_field=venue_field,
+        title=_latex_escape(_bib_title(title, subtitle)),
+        authors=tuple(
+            name
+            for creator in _as_list(attributes.get("creators"))
+            if (name := _datacite_bib_author(creator))
+        ),
+        volume=_text(container.get("volume")) or None,
+        issue=_text(container.get("issue")) or None,
+        pages="--".join(page for page in (first, last) if page) or None,
+        publisher=publisher
+        if publisher and entry_type in _DATACITE_PUBLISHED
+        else None,
+    )
+
+
+def _datacite_bib_author(creator: object) -> str:
+    """A creator in BibTeX name form, or "" when it has no name."""
+    parts = _as_dict(creator)
+    name = _text(parts.get("name"))
+    if parts.get("nameType") == "Organizational":
+        return _bib_organisation(name)
+    family = _text(parts.get("familyName"))
+    if family:
+        return _bib_person(family, _text(parts.get("givenName")))
+    return _latex_escape(name)
+
+
 def _datacite_titles(value: object) -> tuple[str, ...]:
+    title, subtitle = _datacite_title_parts(value)
+    return (title, f"{title} {subtitle}") if subtitle else (title,)
+
+
+def _datacite_title_parts(value: object) -> tuple[str, str]:
     entries = [entry for entry in _as_list(value) if isinstance(entry, dict)]
 
     def first_of(*kinds: str | None) -> str:
@@ -748,8 +859,7 @@ def _datacite_titles(value: object) -> tuple[str, ...]:
                 return text
         return ""
 
-    title, subtitle = first_of(None), first_of("Subtitle")
-    return (title, f"{title} {subtitle}") if subtitle else (title,)
+    return first_of(None), first_of("Subtitle")
 
 
 def _datacite_surname(creator: dict[str, Any]) -> str:
@@ -785,6 +895,62 @@ def _text(value: object) -> str:
     if isinstance(value, int) and not isinstance(value, bool):
         return str(value)
     return value.strip() if isinstance(value, str) else ""
+
+
+def _latex_escape(text: str) -> str:
+    return text.translate(_LATEX_ESCAPES)
+
+
+def _bib_person(family: str, given: str) -> str:
+    name = _latex_escape(family)
+    return f"{name}, {_latex_escape(given)}" if given else name
+
+
+def _bib_organisation(name: str) -> str:
+    """An organisation in braces, so BibTeX does not split it into parts."""
+    return f"{{{_latex_escape(name)}}}" if name else ""
+
+
+def _bib_title(title: str, subtitle: str) -> str:
+    """The main title, then ": subtitle", as plain text on one line."""
+    parts = (
+        _WHITESPACE.sub(" ", visible_text(text)).strip() for text in (title, subtitle)
+    )
+    return ": ".join(part for part in parts if part)
+
+
+def _crossref_bib(work: dict[str, Any]) -> BibDetails:
+    entry_type, venue_field = _CROSSREF_TYPES.get(
+        str(work.get("type")), _CROSSREF_OTHER
+    )
+    publisher = _text(work.get("publisher"))
+    return BibDetails(
+        entry_type=entry_type,
+        venue_field=venue_field,
+        title=_latex_escape(
+            _bib_title(_first(work.get("title")), _first(work.get("subtitle")))
+        ),
+        authors=tuple(
+            name
+            for author in _as_list(work.get("author"))
+            if (name := _crossref_bib_author(author))
+        ),
+        volume=_text(work.get("volume")) or None,
+        issue=_text(work.get("issue")) or None,
+        pages=_PAGE_RANGE.sub(r"\1--\2", _text(work.get("page"))) or None,
+        publisher=publisher
+        if publisher and entry_type in _CROSSREF_PUBLISHED
+        else None,
+    )
+
+
+def _crossref_bib_author(author: object) -> str:
+    """An author in BibTeX name form, or "" when it has no name."""
+    parts = _as_dict(author)
+    family = _text(parts.get("family"))
+    if family:
+        return _bib_person(family, _text(parts.get("given")))
+    return _bib_organisation(_text(parts.get("name")))
 
 
 def _crossref_record(url: str, work: dict[str, Any]) -> Record:
@@ -824,6 +990,7 @@ def _crossref_record(url: str, work: dict[str, Any]) -> Record:
         retraction_checked="Crossref",
         version="version of record",
         open_text=None,
+        bib=_crossref_bib(work),
     )
 
 
@@ -1052,6 +1219,16 @@ def _arxiv_record(
         retraction_checked="arXiv comments",
         version=version,
         open_text=f"{ARXIV_ABS}{base}v{cited.version}",
+        bib=BibDetails(
+            entry_type="misc",
+            venue_field="",
+            title=_WHITESPACE.sub(" ", cited.title).strip(),
+            authors=tuple(name for name in cited.authors if name),
+            volume=None,
+            issue=None,
+            pages=None,
+            publisher=None,
+        ),
     )
 
 
@@ -1099,6 +1276,7 @@ class Verification:
     notices: tuple[Notice, ...]
     retraction_checked: str
     open_text: str | None
+    bib: BibDetails | None
 
 
 def verify(source: CitedSource, fetch: Fetch) -> Verification:
@@ -1122,6 +1300,7 @@ def verify(source: CitedSource, fetch: Fetch) -> Verification:
         lookup.notices,
         lookup.retraction_checked,
         lookup.open_text,
+        lookup.bib,
     )
 
 
@@ -1138,6 +1317,7 @@ def unchecked(source: CitedSource, query_url: str, reason: str) -> Verification:
         (),
         (),
         "not checked",
+        None,
         None,
     )
 
@@ -1330,7 +1510,106 @@ def _cell(text: str) -> str:
     return _WHITESPACE.sub(" ", text).replace("|", "\\|").strip()
 
 
+# BibTeX
+
+
+# The statuses whose cited fields all matched the record.
+_BIB_STATUSES = frozenset({Status.VERIFIED, Status.CLAIM_NOT_CHECKED})
+
+
+def _is_bib_ready(verification: Verification) -> bool:
+    return verification.bib is not None and verification.status in _BIB_STATUSES
+
+
+def bib_entry(verification: Verification) -> str | None:
+    """The BibTeX entry for a source, or None when its fields did not all match.
+
+    The entry comes from the registry record, not from the cited fields.
+    """
+    details = verification.bib
+    if details is None or not _is_bib_ready(verification):
+        return None
+    lines = [
+        f"  {name} = {{{value}}},"
+        for name, value in _bib_fields(verification, details)
+        if value
+    ]
+    key = verification.source.key
+    return "\n".join([f"@{details.entry_type}{{{key},", *lines, "}"])
+
+
+def _bib_fields(
+    verification: Verification, details: BibDetails
+) -> list[tuple[str, str]]:
+    source = verification.source
+    identifier = source.identifier
+    # Identifiers are read by URL macros, so they are not escaped.
+    identifiers = (
+        [("eprint", str(identifier)), ("archivePrefix", "arXiv")]
+        if isinstance(identifier, ArxivId)
+        else [("doi", identifier)]
+    )
+    venue = _latex_escape(verification.venue) if details.venue_field else ""
+    return [
+        ("author", " and ".join(details.authors)),
+        ("title", details.title),
+        (details.venue_field, venue),
+        ("publisher", _latex_escape(details.publisher or "")),
+        ("volume", _latex_escape(details.volume or "")),
+        ("number", _latex_escape(details.issue or "")),
+        ("pages", _latex_escape(details.pages or "")),
+        ("year", str(source.year)),
+        *identifiers,
+    ]
+
+
+def render_bib(verifications: Sequence[Verification]) -> str:
+    """The entries of every source that may be cited, in the sources' order."""
+    entries = [entry for v in verifications if (entry := bib_entry(v)) is not None]
+    return "\n\n".join(entries) + "\n" if entries else ""
+
+
+def bib_report(
+    sources: Sequence[CitedSource],
+    verifications: Sequence[Verification],
+    path: Path,
+) -> str:
+    """One line: how many sources were written, and which were left out and why."""
+    ready = {v.source.key for v in verifications if _is_bib_ready(v)}
+    statuses = {v.source.key: v.status.value for v in verifications}
+    left_out = [
+        f"{source.key} ({statuses.get(source.key, 'NOT CHECKED')})"
+        for source in sources
+        if source.key not in ready
+    ]
+    line = f"wrote {len(ready)} of {len(sources)} sources to {path}"
+    return f"{line}; left out: {', '.join(left_out)}" if left_out else line
+
+
 # Command line
+
+
+def _bib_path_problem(path: Path) -> str | None:
+    if path.is_dir():
+        return "it is a directory"
+    if not path.parent.is_dir():
+        return f"the folder {path.parent} does not exist"
+    return None
+
+
+def _write_bib(
+    sources: Sequence[CitedSource],
+    verifications: Sequence[Verification],
+    path: Path,
+) -> bool:
+    """Write the BibTeX file and report it. False when it could not be written."""
+    try:
+        path.write_text(render_bib(verifications), encoding="utf-8", newline="\n")
+    except OSError as err:
+        print(f"cannot write {path}: {err}", file=sys.stderr)
+        return False
+    print(bib_report(sources, verifications, path), file=sys.stderr)
+    return True
 
 
 def _read_input(path: str) -> tuple[str, Path]:
@@ -1350,9 +1629,11 @@ def _cache_path(sources: str) -> Path:
     return path.with_name(f"{path.stem}.cache.json")
 
 
-def _check_all(sources: Sequence[CitedSource], fetch: Fetch) -> int:
+def _check_all(
+    sources: Sequence[CitedSource], fetch: Fetch, verifications: list[Verification]
+) -> int:
+    """Check each source, adding each verification to `verifications` as made."""
     retrieved = date.today()
-    verifications: list[Verification] = []
     print(LOG_HEADER, flush=True)
     deadline = time.monotonic() + MAX_RUN_SECONDS
     for source in sources:
@@ -1376,7 +1657,7 @@ def _check_all(sources: Sequence[CitedSource], fetch: Fetch) -> int:
     return 0 if all(v.status is Status.VERIFIED for v in verifications) else 1
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Check cited references and quoted passages against registries."
     )
@@ -1388,7 +1669,21 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="ignore cached responses and fetch again",
     )
-    args = parser.parse_args(argv)
+    parser.add_argument(
+        "--bib",
+        type=Path,
+        metavar="PATH",
+        help="write a BibTeX file of the sources whose cited fields all matched",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv)
+    problem = None if args.bib is None else _bib_path_problem(args.bib)
+    if problem is not None:
+        print(f"cannot write {args.bib}: {problem}", file=sys.stderr)
+        return 2
     # Sources and logs are UTF-8 files; a Windows console defaults to a legacy
     # code page that would garble names on the way in and out.
     for stream in (sys.stdin, sys.stdout):
@@ -1401,12 +1696,24 @@ def main(argv: list[str] | None = None) -> int:
         print(f"cannot verify {args.sources}: {err}", file=sys.stderr)
         return 2
 
+    verifications: list[Verification] = []
+    code = _run_checks(sources, args, verifications)
+    if args.bib is not None and not _write_bib(sources, verifications, args.bib):
+        return 3
+    return code
+
+
+def _run_checks(
+    sources: Sequence[CitedSource],
+    args: argparse.Namespace,
+    verifications: list[Verification],
+) -> int:
     client = RegistryClient()
     if args.sources == "-":
-        return _check_all(sources, client)
+        return _check_all(sources, client, verifications)
     cache = ResponseCache(client, _cache_path(args.sources), refresh=args.refresh)
     try:
-        return _check_all(sources, cache)
+        return _check_all(sources, cache, verifications)
     finally:
         cache.save()
 

@@ -3,6 +3,8 @@ import email.message
 import http.client
 import io
 import json
+import os
+import stat
 import sys
 import time
 import urllib.error
@@ -32,6 +34,7 @@ from verify import (
     main,
     parse_identifier,
     parse_sources,
+    render_bib,
     verify,
 )
 
@@ -143,6 +146,7 @@ def atom(
     summary: str,
     extras: str = "<arxiv:comment>15 pages</arxiv:comment>",
     authors: Sequence[str] = VASWANI_AUTHORS,
+    title: str = "Attention Is All\n      You Need",
 ) -> bytes:
     """An arXiv API feed holding one version of "Attention Is All You Need"."""
     names = "".join(f"<author><name>{name}</name></author>" for name in authors)
@@ -153,8 +157,7 @@ def atom(
   <opensearch:totalResults>1</opensearch:totalResults>
   <entry>
     <id>http://arxiv.org/abs/1706.03762v{version}</id>
-    <title>Attention Is All
-      You Need</title>
+    <title>{title}</title>
     <updated>2017-08-02T00:41:18Z</updated>
     <published>2017-06-12T17:57:34Z</published>
     <summary>{summary}</summary>
@@ -1526,3 +1529,471 @@ def test_main_keeps_its_exit_code_when_the_cache_cannot_be_written(
     argv = [str(tmp_path / "refs.jsonl")]
     assert run_main_with(doi_registry(), monkeypatch, argv) == 0
     assert "refs.cache.json" in capsys.readouterr().err
+
+
+# BibTeX output
+
+
+def parse_bib(text: str) -> tuple[str, dict[str, str]]:
+    """The header line and the fields of a single BibTeX entry."""
+    header, *lines, closing = text.strip().splitlines()
+    assert closing == "}"
+    fields: dict[str, str] = {}
+    for line in lines:
+        name, _, value = line.strip().partition(" = ")
+        fields[name] = value.removeprefix("{").removesuffix("},")
+    return header, fields
+
+
+def bib_of(
+    cited: dict[str, object], registry: FakeRegistry
+) -> tuple[str, dict[str, str]]:
+    return parse_bib(render_bib([check(cited, registry)]))
+
+
+def crossref_bib(**changes: object) -> tuple[str, dict[str, str]]:
+    return bib_of({}, doi_registry(crossref(**changes)))
+
+
+def test_bib_journal_article_is_written_in_field_order_from_the_record() -> None:
+    work = crossref(
+        type="journal-article",
+        author=[{"family": "Feynman", "given": "Richard P."}],
+        issue="6/7",
+        publisher="Springer",
+    )
+    assert render_bib([check({}, doi_registry(work))]) == (
+        "@article{Feynman1982,\n"
+        "  author = {Feynman, Richard P.},\n"
+        "  title = {Simulating physics with computers},\n"
+        "  journal = {International Journal of Theoretical Physics},\n"
+        "  volume = {21},\n"
+        "  number = {6/7},\n"
+        "  pages = {467--488},\n"
+        "  year = {1982},\n"
+        "  doi = {10.1007/bf02650179},\n"
+        "}\n"
+    )
+
+
+def test_bib_entries_follow_the_sources_order_with_a_blank_line_between() -> None:
+    first = check({}, doi_registry())
+    second = check({"key": "Second"}, doi_registry(crossref(type="book")))
+    entries = render_bib([first, second]).split("\n\n")
+    assert [part.splitlines()[0] for part in entries] == [
+        "@misc{Feynman1982,",
+        "@book{Second,",
+    ]
+
+
+def test_bib_proceedings_article_uses_booktitle_and_leaves_out_empty_fields() -> None:
+    header, fields = crossref_bib(
+        type="proceedings-article", volume=None, page=None, publisher="Springer"
+    )
+    assert header == "@inproceedings{Feynman1982,"
+    assert fields["booktitle"] == "International Journal of Theoretical Physics"
+    assert not {"journal", "volume", "pages", "number", "publisher"} & fields.keys()
+
+
+def test_bib_book_chapter_has_booktitle_and_publisher() -> None:
+    header, fields = crossref_bib(type="book-chapter", publisher="Springer")
+    assert header == "@incollection{Feynman1982,"
+    assert fields["booktitle"] == "International Journal of Theoretical Physics"
+    assert fields["publisher"] == "Springer"
+
+
+@pytest.mark.parametrize("kind", ["book", "monograph", "edited-book"])
+def test_bib_book_types_have_a_publisher_and_no_venue(kind: str) -> None:
+    header, fields = crossref_bib(
+        type=kind, publisher="Springer", **{"container-title": None}
+    )
+    assert header == "@book{Feynman1982,"
+    assert fields["publisher"] == "Springer"
+    assert not {"journal", "booktitle", "howpublished"} & fields.keys()
+
+
+@pytest.mark.parametrize("kind", ["posted-content", None])
+def test_bib_other_crossref_types_are_misc_with_the_venue_as_howpublished(
+    kind: str | None,
+) -> None:
+    header, fields = crossref_bib(type=kind, publisher="Springer")
+    assert header == "@misc{Feynman1982,"
+    assert fields["howpublished"] == "International Journal of Theoretical Physics"
+    assert "publisher" not in fields
+
+
+def test_bib_datacite_article_takes_issue_and_pages_from_the_container() -> None:
+    container = {
+        "title": "International Journal of Theoretical Physics",
+        "volume": "21",
+        "issue": "3",
+        "firstPage": "467",
+        "lastPage": "488",
+    }
+    header, fields = bib_of({}, datacite_registry(datacite(container=container)))
+    assert header == "@article{Feynman1982,"
+    assert fields["journal"] == "International Journal of Theoretical Physics"
+    assert fields["volume"] == "21"
+    assert fields["number"] == "3"
+    assert fields["pages"] == "467--488"
+    assert "publisher" not in fields
+    assert fields["doi"] == "10.1007/bf02650179"
+
+
+def test_bib_datacite_dataset_is_misc_with_a_publisher_and_no_venue_field() -> None:
+    registry = datacite_registry(
+        datacite(types={"resourceTypeGeneral": "Dataset"}, container=None)
+    )
+    header, fields = bib_of({}, registry)
+    assert header == "@misc{Feynman1982,"
+    assert fields["publisher"] == "Springer"
+    assert not {"journal", "booktitle", "howpublished"} & fields.keys()
+
+
+@pytest.mark.parametrize(
+    ("kind", "entry_type", "venue_field"),
+    [
+        ("ConferencePaper", "inproceedings", "booktitle"),
+        ("BookChapter", "incollection", "booktitle"),
+        ("Book", "book", None),
+    ],
+)
+def test_bib_datacite_resource_types_map_to_entry_types(
+    kind: str, entry_type: str, venue_field: str | None
+) -> None:
+    registry = datacite_registry(datacite(types={"resourceTypeGeneral": kind}))
+    header, fields = bib_of({}, registry)
+    assert header == f"@{entry_type}{{Feynman1982,"
+    venue = "International Journal of Theoretical Physics"
+    if venue_field is None:
+        assert venue not in fields.values()
+    else:
+        assert fields[venue_field] == venue
+
+
+@pytest.mark.parametrize(
+    ("cited", "eprint"),
+    [({}, "1706.03762"), ({"id": "arXiv:1706.03762v1"}, "1706.03762v1")],
+)
+def test_bib_arxiv_is_misc_with_the_eprint_as_cited(
+    cited: dict[str, object], eprint: str
+) -> None:
+    registry = FakeRegistry(
+        [
+            ("id_list=1706.03762v1", atom(version=1, summary=ATTENTION_V1)),
+            ("id_list=1706.03762", atom(version=7, summary=ATTENTION_V7)),
+        ]
+    )
+    quote = ATTENTION_V1 if "id" in cited else ATTENTION_V7
+    verification = check_arxiv(
+        {**cited, "evidence": [{"claim": "x", "quote": quote}]}, registry
+    )
+    header, fields = parse_bib(render_bib([verification]))
+    assert header == "@misc{Vaswani2017,"
+    assert fields == {
+        "author": "Ashish Vaswani and Noam Shazeer and Niki Parmar",
+        "title": "Attention Is All You Need",
+        "year": "2017",
+        "eprint": eprint,
+        "archivePrefix": "arXiv",
+    }
+
+
+def test_bib_arxiv_title_is_latex_already_and_kept() -> None:
+    title = r"Attention with $\alpha$ heads"
+    registry = FakeRegistry(
+        [("id_list=1706.03762", atom(version=7, summary=ATTENTION_V7, title=title))]
+    )
+    verification = check_arxiv({"title": "Attention with alpha heads"}, registry)
+    _, fields = parse_bib(render_bib([verification]))
+    assert fields["title"] == title
+
+
+@pytest.mark.parametrize(
+    ("character", "escaped"),
+    [
+        ("\\", r"\textbackslash{}"),
+        ("&", r"\&"),
+        ("%", r"\%"),
+        ("$", r"\$"),
+        ("#", r"\#"),
+        ("_", r"\_"),
+        ("{", r"\{"),
+        ("}", r"\}"),
+        ("~", r"\textasciitilde{}"),
+        ("^", r"\textasciicircum{}"),
+    ],
+)
+def test_bib_escapes_each_special_character(character: str, escaped: str) -> None:
+    work = crossref(title=[f"x{character}y"], issue=f"1{character}2")
+    _, fields = bib_of({"title": "x y"}, doi_registry(work))
+    assert fields["title"] == f"x{escaped}y"
+    assert fields["number"] == f"1{escaped}2"
+
+
+def test_bib_escapes_the_backslash_before_the_commands_it_adds() -> None:
+    work = crossref(title=["a\\b&c"])
+    _, fields = bib_of({"title": "a b c"}, doi_registry(work))
+    assert fields["title"] == r"a\textbackslash{}b\&c"
+
+
+def test_bib_escapes_the_venue_and_publisher() -> None:
+    _, fields = crossref_bib(
+        type="book-chapter", publisher="Wiley & Sons", **{"container-title": ["A_B"]}
+    )
+    assert fields["publisher"] == r"Wiley \& Sons"
+    assert fields["booktitle"] == r"A\_B"
+
+
+def test_bib_writes_the_doi_verbatim() -> None:
+    _, fields = bib_of({"id": "10.1000/a_b%c"}, doi_registry())
+    assert fields["doi"] == "10.1000/a_b%c"
+
+
+def test_bib_strips_markup_from_the_title_and_collapses_whitespace() -> None:
+    work = crossref(title=["The <i>H</i><sub>2</sub>\n  molecule"])
+    _, fields = bib_of({"title": "The H2 molecule"}, doi_registry(work))
+    assert fields["title"] == "The H2 molecule"
+
+
+def test_bib_title_gains_the_subtitle() -> None:
+    work = crossref(subtitle=["A <i>new</i> look"])
+    _, fields = bib_of({}, doi_registry(work))
+    assert fields["title"] == "Simulating physics with computers: A new look"
+
+
+def test_bib_datacite_title_gains_the_subtitle() -> None:
+    titles = [
+        {"title": "Simulating physics with computers"},
+        {"title": "A new look", "titleType": "Subtitle"},
+    ]
+    _, fields = bib_of({}, datacite_registry(datacite(titles=titles)))
+    assert fields["title"] == "Simulating physics with computers: A new look"
+
+
+def test_bib_keeps_non_ascii_text() -> None:
+    work = crossref(
+        title=["Schrödinger's equation"],
+        author=[{"family": "Schrödinger", "given": "Erwin"}],
+    )
+    cited: dict[str, object] = {
+        "title": "Schrödinger's equation",
+        "authors": ["Schrödinger"],
+    }
+    _, fields = bib_of(cited, doi_registry(work))
+    assert fields["author"] == "Schrödinger, Erwin"
+    assert fields["title"] == "Schrödinger's equation"
+
+
+def test_bib_crossref_authors_have_given_names_and_organisations_are_braced() -> None:
+    work = crossref(
+        author=[
+            {"family": "Aad", "given": "Georges"},
+            {"family": "Feynman"},
+            {"name": "CERN Collaboration"},
+        ]
+    )
+    cited: dict[str, object] = {"authors": ["Aad", "Feynman", "CERN Collaboration"]}
+    _, fields = bib_of(cited, doi_registry(work))
+    assert fields["author"] == "Aad, Georges and Feynman and {CERN Collaboration}"
+
+
+def test_bib_datacite_authors_are_in_name_form_and_organisations_are_braced() -> None:
+    creators = [
+        {"name": "DESY & Partners", "nameType": "Organizational"},
+        {"name": "Feynman, R."},
+        {"name": "Dirac, Paul", "familyName": "Dirac", "givenName": "Paul"},
+    ]
+    cited: dict[str, object] = {"authors": ["DESY & Partners", "Feynman", "Dirac"]}
+    _, fields = bib_of(cited, datacite_registry(datacite(creators=creators)))
+    assert fields["author"] == r"{DESY \& Partners} and Feynman, R. and Dirac, Paul"
+
+
+@pytest.mark.parametrize("registered", ["467-488", f"467{chr(0x2013)}488", "467--488"])
+def test_bib_page_range_is_written_with_a_double_hyphen(registered: str) -> None:
+    _, fields = bib_of({"pages": None}, doi_registry(crossref(page=registered)))
+    assert fields["pages"] == "467--488"
+
+
+def test_bib_single_page_and_article_number_are_kept_as_registered() -> None:
+    _, fields = bib_of({"pages": None}, doi_registry(crossref(page="P04005")))
+    assert fields["pages"] == "P04005"
+
+
+def mixed_lines() -> list[str]:
+    cases = [
+        entry(key="Good", id="10.1000/good"),
+        entry(
+            key="NoQuote",
+            id="10.1000/noquote",
+            evidence=[{"claim": "x", "quote": "a passage the abstract does not hold"}],
+        ),
+        entry(key="Wrong", id="10.1000/wrong", year=1990),
+        entry(key="Gone", id="10.1000/gone"),
+        entry(key="Retracted", id="10.1000/retracted"),
+    ]
+    return [json.dumps(case) for case in cases]
+
+
+def mixed_registry() -> FakeRegistry:
+    return FakeRegistry(
+        [
+            ("crossref.org/works/10.1000/gone", None),
+            ("datacite.org/dois/10.1000/gone", None),
+            (
+                "crossref.org/works/10.1000/retracted",
+                crossref(**notices(("retraction", "10.1000/notice"))),
+            ),
+            ("api.crossref.org", crossref()),
+            ("api.openalex.org", openalex()),
+        ]
+    )
+
+
+def test_main_bib_writes_only_sources_whose_fields_all_matched(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (tmp_path / "refs.jsonl").write_text("\n".join(mixed_lines()), encoding="utf-8")
+    bib = tmp_path / "refs.bib"
+    argv = [str(tmp_path / "refs.jsonl"), "--bib", str(bib)]
+    assert run_main_with(mixed_registry(), monkeypatch, argv) == 1
+    written = bib.read_text(encoding="utf-8")
+    keys = [part.splitlines()[0] for part in written.strip().split("\n\n")]
+    assert keys == ["@misc{Good,", "@misc{NoQuote,"]
+    assert capsys.readouterr().err.strip() == (
+        f"wrote 2 of 5 sources to {bib}; "
+        "left out: Wrong (MISMATCH), Gone (UNVERIFIED), Retracted (RETRACTED)"
+    )
+
+
+def test_main_bib_names_no_left_out_sources_when_all_are_written(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (tmp_path / "refs.jsonl").write_text(json.dumps(entry()), encoding="utf-8")
+    bib = tmp_path / "refs.bib"
+    argv = [str(tmp_path / "refs.jsonl"), "--bib", str(bib)]
+    assert run_main_with(doi_registry(), monkeypatch, argv) == 0
+    assert capsys.readouterr().err.strip() == f"wrote 1 of 1 sources to {bib}"
+
+
+def test_main_bib_is_empty_when_nothing_matched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "refs.jsonl").write_text(json.dumps(entry(year=1990)), encoding="utf-8")
+    argv = [str(tmp_path / "refs.jsonl"), "--bib", str(tmp_path / "refs.bib")]
+    assert run_main_with(doi_registry(), monkeypatch, argv) == 1
+    assert (tmp_path / "refs.bib").read_text(encoding="utf-8") == ""
+
+
+def test_main_bib_is_written_as_utf8(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    line = json.dumps(entry(authors=["Schrödinger"]), ensure_ascii=False)
+    (tmp_path / "refs.jsonl").write_text(line, encoding="utf-8")
+    registry = doi_registry(crossref(author=families("Schrödinger")))
+    argv = [str(tmp_path / "refs.jsonl"), "--bib", str(tmp_path / "refs.bib")]
+    assert run_main_with(registry, monkeypatch, argv) == 0
+    text = (tmp_path / "refs.bib").read_bytes().decode("utf-8")
+    assert "Schrödinger, A." in text
+
+
+def test_main_bib_works_with_standard_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(entry())))
+    bib = tmp_path / "refs.bib"
+    assert run_main_with(doi_registry(), monkeypatch, ["-", "--bib", str(bib)]) == 0
+    assert bib.read_text(encoding="utf-8").startswith("@misc{Feynman1982,")
+
+
+def test_main_bib_in_a_missing_folder_exits_2_before_any_request(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (tmp_path / "refs.jsonl").write_text(json.dumps(entry()), encoding="utf-8")
+    bib = tmp_path / "missing" / "refs.bib"
+    registry = doi_registry()
+    argv = [str(tmp_path / "refs.jsonl"), "--bib", str(bib)]
+    assert run_main_with(registry, monkeypatch, argv) == 2
+    assert registry.requested == []
+    assert str(bib) in capsys.readouterr().err
+    assert not (tmp_path / "refs.cache.json").exists()
+
+
+def test_main_bib_that_is_a_directory_exits_2_before_any_request(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (tmp_path / "refs.jsonl").write_text(json.dumps(entry()), encoding="utf-8")
+    registry = doi_registry()
+    argv = [str(tmp_path / "refs.jsonl"), "--bib", str(tmp_path)]
+    assert run_main_with(registry, monkeypatch, argv) == 2
+    assert registry.requested == []
+    assert str(tmp_path) in capsys.readouterr().err
+
+
+def test_main_bib_is_written_after_a_fault_with_what_was_verified(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    lines = [json.dumps(entry()), json.dumps(entry(key="Second", id="10.1000/second"))]
+    (tmp_path / "refs.jsonl").write_text("\n".join(lines), encoding="utf-8")
+    registry = FakeRegistry(
+        [
+            ("10.1000/second", RuntimeError("bug")),
+            ("api.crossref.org", crossref()),
+            ("api.openalex.org", openalex()),
+        ]
+    )
+    bib = tmp_path / "refs.bib"
+    argv = [str(tmp_path / "refs.jsonl"), "--bib", str(bib)]
+    assert run_main_with(registry, monkeypatch, argv) == 3
+    assert bib.read_text(encoding="utf-8").startswith("@misc{Feynman1982,")
+    assert (
+        capsys.readouterr()
+        .err.strip()
+        .endswith(f"wrote 1 of 2 sources to {bib}; left out: Second (NOT CHECKED)")
+    )
+
+
+def test_main_bib_is_written_when_the_time_limit_is_reached(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (tmp_path / "refs.jsonl").write_text(json.dumps(entry()), encoding="utf-8")
+    bib = tmp_path / "refs.bib"
+    monkeypatch.setattr(verify_module, "MAX_RUN_SECONDS", -1)
+    argv = [str(tmp_path / "refs.jsonl"), "--bib", str(bib)]
+    assert run_main_with(doi_registry(), monkeypatch, argv) == 1
+    assert bib.read_text(encoding="utf-8") == ""
+    assert "left out: Feynman1982 (UNVERIFIED)" in capsys.readouterr().err
+
+
+def test_main_bib_write_failure_prints_one_line_and_exits_3(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (tmp_path / "refs.jsonl").write_text(json.dumps(entry()), encoding="utf-8")
+    bib = tmp_path / "refs.bib"
+    bib.write_text("kept", encoding="utf-8")
+    bib.chmod(stat.S_IREAD)
+    if os.access(bib, os.W_OK):
+        pytest.skip("this account can write to read-only files")
+    argv = [str(tmp_path / "refs.jsonl"), "--bib", str(bib)]
+    try:
+        assert run_main_with(doi_registry(), monkeypatch, argv) == 3
+    finally:
+        bib.chmod(stat.S_IREAD | stat.S_IWRITE)
+    lines = capsys.readouterr().err.strip().splitlines()
+    assert len(lines) == 1
+    assert lines[0].startswith(f"cannot write {bib}")
+    assert bib.read_text(encoding="utf-8") == "kept"
