@@ -6,7 +6,7 @@ The writer of a draft reads what they meant, not what they wrote. The checker an
 
 | Pass | Runs when | Reads | Tier |
 |---|---|---|---|
-| Claim support | The draft cites sources and `verify.py --draft` reports no errors | The claim and quote pairs from the sources file | router-worker |
+| Claim support | The draft cites sources and, where code runs, `verify.py --draft` reports no errors | The claim and quote pairs from the sources file | router-worker |
 | Cold reader | Reports, essays, explainers and applications over about 150 words; anything for a reader outside the field | The draft and a one-paragraph description of its reader | router-worker |
 | Examiner | A rubric, marking scheme or person specification for the draft is in the working folder or the request, whatever the register | The draft and the rubric | router-expert |
 
@@ -74,4 +74,4 @@ After the changes, run `check.py` again and, if the citations changed, `verify.p
 
 ## Without subagents
 
-In a claude.ai chat, or anywhere the agent tool is unavailable, run the passes in sequence yourself and keep their inputs apart. Claim support: set out the pairs as a table and judge each row before reading the next, without looking back at the draft. Cold reader: write the reader description first, then read the draft once from the top and list every problem before fixing any. Examiner: take the rubric one criterion at a time. These passes are weaker than fresh ones, because the mind reading the draft is the one that wrote it. Say so in the delivery note.
+In a claude.ai chat, or anywhere the agent tool is unavailable, run the passes in sequence yourself and keep their inputs apart. Claim support: set out the pairs as a table and judge each row before reading the next, without looking back at the draft. Without code execution `verify.py` cannot run, so no quote has been found in its source either; the pass judges the quotes as given, and the delivery note says they were not checked against the sources. Cold reader: write the reader description first, then read the draft once from the top and list every problem before fixing any. Examiner: take the rubric one criterion at a time. These passes are weaker than fresh ones, because the mind reading the draft is the one that wrote it. Say so in the delivery note.
