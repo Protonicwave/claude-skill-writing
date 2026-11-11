@@ -64,7 +64,8 @@ These are the rules that matter most. `tells.md` and `clarity.md` give the evide
    ```
 
    It reads `-` as standard input. Fix every error. Judge every warning: a listed word used in its technical sense (potential energy, robust estimator) stays; decoration goes. Where code execution is unavailable, apply `tells.md` by hand.
-6. Deliver the text in the requested format. After it, briefly and only if they exist: open markers, where the verification log is, and any judgement call the student should check. No summary of what was written.
+6. Have the draft read with fresh eyes, as `review.md` says: whether each quote supports its claim as worded, whether the named reader can follow it, and, when a rubric exists, how an examiner would mark it. Settle every finding by changing the text or showing the finding wrong.
+7. Deliver the text in the requested format. After it, briefly and only if they exist: open markers, where the verification log is, and any judgement call the student should check. No summary of what was written.
 
 ## Editing the student's own text
 
@@ -76,6 +77,7 @@ When asked to rewrite, tighten or "make it sound more human", keep the student's
 - `clarity.md`: defining terms, explaining equations, ordering information, analogies, precision.
 - `sources.md`: finding sources on a budget, verifying them, gap markers, the verification log, citation styles.
 - `exemplars.md`: short passages from admired human writers and what each one does.
+- `review.md`: the fresh-context passes for claim support, a cold reader and an examiner.
 - `registers/`: one file per kind of writing.
 - `scripts/check.py`: the draft checker.
 - `scripts/verify.py`: checks references and quoted passages against the registries.
