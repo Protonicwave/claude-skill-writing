@@ -76,8 +76,8 @@ Blunt:
 
 > The results table is wrong again. Someone needs to rerun the fits with the corrected calibration before Thursday, I'm not doing it a third time.
 
-Warmer and less blunt, with the deadline and the request kept:
+Warmer and less blunt, with the request, the deadline and the refusal kept:
 
-> The results table still has the old calibration in it, which is easy to miss because both files have the same name. Could we rerun the fits with the corrected file before Thursday? I can take the first half if that helps.
+> The results table still has the old calibration in it, which is easy to miss because both files have the same name. Could someone rerun the fits with the corrected file before Thursday? I've done the last two runs, so it would help if someone else took this one.
 
-The request and the deadline are in the second sentence. "Someone" and the reproach are gone; the problem is the subject, the fix is shared, and the warmth is a specific reason and a specific offer. The reason here is invented for the example's shape; in real text it comes from the student, or the sentence goes.
+The request and the deadline are in the second sentence. The reproach is gone: the problem is the subject, and the writer's refusal to run the fits a third time stays, stated as a reason rather than a complaint. The warmth is a specific explanation, not praise or an offer of help the original never made. The explanation here is invented for the example's shape; in real text it comes from the student, or the sentence goes.
