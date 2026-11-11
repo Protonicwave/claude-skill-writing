@@ -836,12 +836,14 @@ def _datacite_bib_author(creator: object) -> str:
     """A creator in BibTeX name form, or "" when it has no name."""
     parts = _as_dict(creator)
     name = _text(parts.get("name"))
-    if parts.get("nameType") == "Organizational":
-        return _bib_organisation(name)
     family = _text(parts.get("familyName"))
-    if family:
+    if family and parts.get("nameType") != "Organizational":
         return _bib_person(family, _text(parts.get("givenName")))
-    return _latex_escape(name)
+    # A personal name without its parts is written "Family, Given"; anything
+    # else is a group, which BibTeX would otherwise split into given and family.
+    if "," in name and parts.get("nameType") != "Organizational":
+        return _latex_escape(name)
+    return _bib_organisation(name)
 
 
 def _datacite_titles(value: object) -> tuple[str, ...]:

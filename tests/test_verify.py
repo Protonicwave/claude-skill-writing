@@ -1809,6 +1809,13 @@ def test_bib_datacite_authors_are_in_name_form_and_organisations_are_braced() ->
     assert fields["author"] == r"{DESY \& Partners} and Feynman, R. and Dirac, Paul"
 
 
+def test_bib_datacite_bare_name_without_a_comma_is_braced() -> None:
+    creators = [{"name": "TensorFlow Developers"}]
+    cited: dict[str, object] = {"authors": ["TensorFlow Developers"]}
+    _, fields = bib_of(cited, datacite_registry(datacite(creators=creators)))
+    assert fields["author"] == "{TensorFlow Developers}"
+
+
 @pytest.mark.parametrize("registered", ["467-488", f"467{chr(0x2013)}488", "467--488"])
 def test_bib_page_range_is_written_with_a_double_hyphen(registered: str) -> None:
     _, fields = bib_of({"pages": None}, doi_registry(crossref(page=registered)))
