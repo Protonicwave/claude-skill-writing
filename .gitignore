@@ -10,3 +10,6 @@ dist/
 .coverage
 htmlcov/
 .env
+
+# Eval runs: model outputs and grading, regenerated on each run.
+evals/workspace/

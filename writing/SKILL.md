@@ -1,6 +1,6 @@
 ---
 name: writing
-description: Writes and edits prose that people read, in a natural human voice with UK English and no machine-writing giveaways. Use for reports, dissertations, project plans, papers, abstracts, lab books, essays, literature reviews, lay summaries, explainers for non-technical readers, emails and Teams or Slack messages, and for any request to draft, rewrite, tighten, humanise or rephrase such text. Covers finding and verifying every citation so no source, figure or result is invented. Not for code comments, docstrings, commit messages, pull request descriptions or READMEs.
+description: Writes and edits prose that people read, in a natural human voice with UK English and no machine-writing giveaways. Use for reports, dissertations, project plans, papers, abstracts, lab books, essays, literature reviews, lay summaries, explainers for non-technical readers, emails and Teams or Slack messages, cover letters, personal statements, blog and LinkedIn posts, and for any request to draft, rewrite, tighten, humanise, rephrase or change the tone of such text. Covers finding and verifying every citation so no source, figure or result is invented. Not for code comments, docstrings, commit messages, pull request descriptions or READMEs.
 ---
 
 # Writing
@@ -20,6 +20,10 @@ Read the matching file in `registers/` before drafting. Choose from the request 
 | Essay, reflective piece, argued answer to a question | `registers/essay.md` |
 | Lay summary, outreach piece, explainer for a reader outside physics or computing | `registers/explainer.md` |
 | Email, Teams or Slack post, message to a supervisor, teammate or client | `registers/message.md` |
+| Cover letter, personal statement, supporting statement, application for a job, placement, scholarship or research degree | `registers/application.md` |
+| Blog post, LinkedIn post, newsletter item | `registers/post.md` |
+
+When the request names a tone ("warmer", "more formal", "less blunt", "shorter", "more confident"), read `voice.md` as well. Tone is five dials set on top of the register, and no tone changes a fact, a request or a hedge's size.
 
 ## Before drafting
 
@@ -56,7 +60,7 @@ These are the rules that matter most. `tells.md` and `clarity.md` give the evide
 1. Gather as above. Ask for what is missing rather than guess.
 2. For anything over about 800 words, agree an outline first: each paragraph as one sentence stating its claim.
 3. Draft in the chosen register.
-4. Revise against `tells.md` and `clarity.md`. Read each paragraph as the named reader would.
+4. Revise against `tells.md` and `clarity.md`. Read each paragraph as the named reader would. For anything longer than a few paragraphs, print the first sentence of each with `check.py <draft> --outline` and read them in order: they should state the argument on their own. A first sentence that does not state its paragraph's claim marks the paragraph to revise.
 5. Run the checker on the draft. In Claude Code, save the draft to a file (or use the file being written) and run:
 
    ```
@@ -64,7 +68,10 @@ These are the rules that matter most. `tells.md` and `clarity.md` give the evide
    ```
 
    It reads `-` as standard input. Fix every error. Judge every warning: a listed word used in its technical sense (potential energy, robust estimator) stays; decoration goes. Where code execution is unavailable, apply `tells.md` by hand.
-6. Deliver the text in the requested format. After it, briefly and only if they exist: open markers, where the verification log is, and any judgement call the student should check. No summary of what was written.
+
+   When the draft cites, also run `scripts/verify.py` with `--draft`, as `sources.md` says, and fix every error it reports: a cite key with no verified source, or a source that failed. Its warnings mark numbers in citing sentences that no quote contains; each is either the student's own number or a claim to trace.
+6. Have the draft read with fresh eyes, as `review.md` says: whether each quote supports its claim as worded, whether the named reader can follow it, and, when a rubric exists, how an examiner would mark it. Settle every finding by changing the text or showing the finding wrong.
+7. Deliver the text in the requested format. After it, briefly and only if they exist: open markers, where the verification log is, and any judgement call the student should check. No summary of what was written.
 
 ## Editing the student's own text
 
@@ -76,6 +83,8 @@ When asked to rewrite, tighten or "make it sound more human", keep the student's
 - `clarity.md`: defining terms, explaining equations, ordering information, analogies, precision.
 - `sources.md`: finding sources on a budget, verifying them, gap markers, the verification log, citation styles.
 - `exemplars.md`: short passages from admired human writers and what each one does.
+- `review.md`: the fresh-context passes for claim support, a cold reader and an examiner.
+- `voice.md`: tone on request as five dials, their defaults for each register, and what no tone may change.
 - `registers/`: one file per kind of writing.
 - `scripts/check.py`: the draft checker.
 - `scripts/verify.py`: checks references and quoted passages against the registries.

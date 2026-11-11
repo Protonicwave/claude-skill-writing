@@ -3,6 +3,12 @@
 Usage:
     verify.py <sources.jsonl>
     verify.py -               read the sources from standard input
+    verify.py --refresh <sources.jsonl>
+                              ignore cached responses and fetch again
+    verify.py --bib <references.bib> <sources.jsonl>
+                              also write a BibTeX file of the verified sources
+    verify.py --draft <draft.md> <sources.jsonl>
+                              also audit the draft's citations and numbers
 
 Each line of the input is one source as the draft cites it:
 
@@ -11,26 +17,45 @@ Each line of the input is one source as the draft cites it:
      "year": 1982, "volume": "21", "pages": "467-488",
      "evidence": [{"claim": "...", "quote": "...", "text": "feynman.html"}]}
 
-`id` is a DOI registered with Crossref or an arXiv identifier, in any usual
-form. `authors` lists surnames in order; a final "et al." stands for the
-rest, and an empty list cites a work with no personal authors. `volume` and
-`pages` are optional. Each quote must appear word for word in the registry
-abstract or, when `text` names one, in a saved copy of the full text: plain
-text or HTML, inside the input file's folder (the current folder for
-standard input).
+`id` is a DOI, looked up in Crossref and then DataCite, or an arXiv
+identifier, in any usual form. `authors` lists surnames in order; a final
+"et al." stands for the rest, and an empty list cites a work with no
+personal authors. `volume` and `pages` are optional. Each quote must appear
+word for word in the registry abstract or, when `text` names one, in a saved
+copy of the full text: plain text or HTML, inside the input file's folder
+(the current folder for standard input).
 
 Prints the verification log as a Markdown table, a row as each source is
-checked. Exits 0 if every source is verified, 1 if any is not, 2 if the
+checked. Registry responses are kept for 24 hours in `<sources stem>.cache.json`
+beside the input file, so a rerun makes no repeat requests; standard input
+keeps no cache. Exits 0 if every source is verified, 1 if any is not, 2 if the
 input cannot be read or is invalid, and 3 if the run stops on a fault.
+
+`--bib` writes a BibTeX entry for each source whose cited fields all matched
+(VERIFIED or CLAIM NOT CHECKED), built from the registry record rather than
+the cited fields, so no reference is typed from memory. The file is written
+after the checks, also when the run stops on a fault, and a path whose folder
+does not exist exits 2 before any request. A write failure exits 3.
+
+`--draft` reads a LaTeX or Markdown draft (UTF-8) and, after the log, prints a
+Markdown audit: each cited key that is not in the sources or not VERIFIED,
+each number in a cited sentence that no quote from the cited sources holds,
+each open gap marker, and each source never cited. An audit error turns exit
+0 into 1. A draft that cannot be read exits 2 before any request, and no
+audit is printed when the run stops on a fault.
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
+import bisect
+import contextlib
 import http.client
 import io
 import json
 import math
+import os
 import re
 import sys
 import time
@@ -38,7 +63,7 @@ import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 from enum import StrEnum
@@ -68,11 +93,17 @@ ARXIV_INTERVAL_SECONDS = 3.0
 EARLIEST_YEAR = 1600
 YEAR_DIGITS = 4
 USER_AGENT = "writing-skill-verify/0.1"
+CACHE_LIFETIME_SECONDS = 24 * 60 * 60
+MAX_CACHED_BODY_BYTES = 1_000_000
+MAX_CACHE_FILE_BYTES = 64 * 1024 * 1024
+CACHE_FORMAT = "writing-verify-cache/1"
 
 CROSSREF_WORKS = "https://api.crossref.org/works/"
+DATACITE_DOIS = "https://api.datacite.org/dois/"
 OPENALEX_WORKS = "https://api.openalex.org/works/doi:"
-OPENALEX_FIELDS = "?select=is_retracted,abstract_inverted_index"
+OPENALEX_FIELDS = "?select=is_retracted,abstract_inverted_index,open_access"
 ARXIV_QUERY = "https://export.arxiv.org/api/query?id_list="
+ARXIV_ABS = "https://arxiv.org/abs/"
 ARXIV_HOST = "export.arxiv.org"
 ARXIV_DOI_PREFIX = "10.48550/arxiv."
 
@@ -80,6 +111,60 @@ _HTTP_NOT_FOUND = 404
 _RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
 # Crossref notice types after which the work must not be cited for its content.
 _RETRACTING_NOTICES = frozenset({"retraction", "withdrawal", "removal"})
+# Crossref work type -> (BibTeX entry type, the field holding the venue). An
+# empty field name means the venue is not written.
+_CROSSREF_OTHER = ("misc", "howpublished")
+_CROSSREF_TYPES = {
+    "journal-article": ("article", "journal"),
+    "proceedings-article": ("inproceedings", "booktitle"),
+    "book-chapter": ("incollection", "booktitle"),
+    "book": ("book", ""),
+    "monograph": ("book", ""),
+    "edited-book": ("book", ""),
+}
+_CROSSREF_TYPES_WITH_PUBLISHER = frozenset({"incollection", "book"})
+# DataCite resourceTypeGeneral, likewise. The venue of a work of any other type
+# is its publisher, so it is written as the publisher.
+_DATACITE_OTHER = ("misc", "")
+_DATACITE_TYPES = {
+    "JournalArticle": ("article", "journal"),
+    "ConferencePaper": ("inproceedings", "booktitle"),
+    "BookChapter": ("incollection", "booktitle"),
+    "Book": ("book", ""),
+}
+_DATACITE_TYPES_WITH_PUBLISHER = frozenset({"incollection", "book", "misc"})
+_LATEX_ESCAPES = str.maketrans(
+    {
+        "\\": r"\textbackslash{}",
+        "&": r"\&",
+        "%": r"\%",
+        "$": r"\$",
+        "#": r"\#",
+        "_": r"\_",
+        "{": r"\{",
+        "}": r"\}",
+        "~": r"\textasciitilde{}",
+        "^": r"\textasciicircum{}",
+    }
+)
+# A character LaTeX reads as markup that is not already escaped with a backslash.
+_BARE_LATEX_SPECIAL = re.compile(r"(?<!\\)([&%#])")
+# What the capital-protection pass leaves alone: maths, commands, backslash
+# escapes and text already in braces. Anything else is matched as a word.
+_TITLE_WORD_OR_MARKUP = re.compile(
+    r"\$\$.*?\$\$|\$.*?\$|\\[A-Za-z]+|\\.|\{[^{}]*\}|(?P<word>\w+)", re.DOTALL
+)
+# Names of groups of people, which BibTeX splits into given names and a
+# surname unless they are braced.
+_GROUP_AUTHOR = re.compile(
+    r"\b(?:collaboration|consortium|team|group|committee|project|experiment"
+    r"|institute|university|laboratory|network|initiative)\b",
+    re.IGNORECASE,
+)
+# Characters BibTeX cannot read in a cite key.
+_BIB_KEY_FORBIDDEN = re.compile(r"[\s,{}%#\\]")
+# A hyphen or en dash between two page numbers is a range.
+_PAGE_RANGE = re.compile(r"(\d)\s*[-\N{EN DASH}]+\s*(\d)")
 _ET_AL = re.compile(r"^et\.?\s+al\.?$", re.IGNORECASE)
 _RETRACTED_TITLE_PREFIX = re.compile(
     r"^\s*retracted(?: article)?\s*:\s*", re.IGNORECASE
@@ -327,7 +412,7 @@ def _parse_source(line: str, saved_texts: _SavedTexts) -> CitedSource:
         raise ValueError(f"expected an object, got {type(entry).__name__}")
     authors, has_more = _authors(entry.get("authors"))
     return CitedSource(
-        key=_required_text(entry, "key"),
+        key=_bib_key(_required_text(entry, "key")),
         identifier=parse_identifier(_required_text(entry, "id")),
         title=_required_text(entry, "title"),
         authors=authors,
@@ -337,6 +422,16 @@ def _parse_source(line: str, saved_texts: _SavedTexts) -> CitedSource:
         pages=_optional_text(entry, "pages"),
         evidence=_evidence(entry.get("evidence"), saved_texts),
     )
+
+
+def _bib_key(key: str) -> str:
+    forbidden = _BIB_KEY_FORBIDDEN.search(key)
+    if forbidden:
+        raise ValueError(
+            f"key {key!r} contains {forbidden.group()!r}, which BibTeX cannot "
+            "read in a cite key"
+        )
+    return key
 
 
 def _required_text(entry: dict[str, Any], name: str) -> str:
@@ -502,6 +597,137 @@ def _retry_wait(retry_after: str | None, attempt: int) -> float:
     return min(BACKOFF_BASE_SECONDS**attempt, MAX_RETRY_WAIT_SECONDS)
 
 
+@dataclass(frozen=True, slots=True)
+class _CachedResponse:
+    fetched: float
+    body: bytes | None
+
+
+class ResponseCache:
+    """A Fetch that keeps the inner fetch's answers for CACHE_LIFETIME_SECONDS.
+
+    Bodies up to MAX_CACHED_BODY_BYTES and 404s are kept. Failures propagate
+    and are not recorded. With `refresh`, stored answers are ignored but new
+    ones are still stored. A cache file that cannot be used is reported on
+    standard error and replaced by `save`. `now` is wall-clock seconds, since
+    entries outlive the process.
+    """
+
+    def __init__(
+        self,
+        fetch: Fetch,
+        path: Path,
+        now: Callable[[], float] = time.time,
+        *,
+        refresh: bool = False,
+    ) -> None:
+        self._fetch = fetch
+        self._path = path
+        self._now = now
+        self._refresh = refresh
+        self._entries = self._load()
+
+    def __call__(self, url: str) -> bytes | None:
+        stored = self._entries.get(url)
+        if stored is not None and not self._refresh and self._is_fresh(stored):
+            return stored.body
+        body = self._fetch(url)
+        if body is None or len(body) <= MAX_CACHED_BODY_BYTES:
+            self._entries[url] = _CachedResponse(self._now(), body)
+        else:
+            self._entries.pop(url, None)
+        return body
+
+    def save(self) -> None:
+        """Write the unexpired entries atomically; a failure is only reported.
+
+        The file stays within MAX_CACHE_FILE_BYTES, which `_load` enforces, by
+        dropping the oldest entries first.
+        """
+        fresh = sorted(
+            (item for item in self._entries.items() if self._is_fresh(item[1])),
+            key=lambda item: item[1].fetched,
+            reverse=True,
+        )
+        entries: dict[str, object] = {}
+        size_bytes = len(json.dumps({"format": CACHE_FORMAT, "entries": {}}))
+        for url, response in fresh:
+            entry = {"fetched": response.fetched, "body": _encode_body(response.body)}
+            # The fragment counts its own braces, so the sum never undercounts.
+            size_bytes += len(json.dumps({url: entry}))
+            if size_bytes > MAX_CACHE_FILE_BYTES:
+                break
+            entries[url] = entry
+        document = json.dumps({"format": CACHE_FORMAT, "entries": entries})
+        temporary = self._path.with_name(self._path.name + ".tmp")
+        try:
+            temporary.write_text(document, encoding="utf-8")
+            os.replace(temporary, self._path)
+        except OSError as err:
+            with contextlib.suppress(OSError):
+                temporary.unlink(missing_ok=True)
+            print(f"cannot write cache {self._path}: {err}", file=sys.stderr)
+
+    def _is_fresh(self, response: _CachedResponse) -> bool:
+        return 0 <= self._now() - response.fetched < CACHE_LIFETIME_SECONDS
+
+    def _load(self) -> dict[str, _CachedResponse]:
+        try:
+            with self._path.open("rb") as handle:
+                raw = handle.read(MAX_CACHE_FILE_BYTES + 1)
+            if len(raw) > MAX_CACHE_FILE_BYTES:
+                raise ValueError(f"over {MAX_CACHE_FILE_BYTES} bytes")
+            return _parse_cache(raw)
+        except FileNotFoundError:
+            return {}
+        except (OSError, ValueError) as err:
+            print(f"ignoring cache {self._path}: {err}", file=sys.stderr)
+            return {}
+
+
+def _encode_body(body: bytes | None) -> str | None:
+    return None if body is None else base64.b64encode(body).decode("ascii")
+
+
+def _parse_cache(raw: bytes) -> dict[str, _CachedResponse]:
+    document = _load_json(raw)
+    if not isinstance(document, dict) or document.get("format") != CACHE_FORMAT:
+        raise ValueError(f"not a {CACHE_FORMAT} file")
+    stored = document.get("entries")
+    if not isinstance(stored, dict):
+        raise ValueError("entries is not an object")
+    entries: dict[str, _CachedResponse] = {}
+    for url, item in stored.items():
+        response = _cached_response(item)
+        if response is not None:
+            entries[url] = response
+    return entries
+
+
+def _cached_response(item: object) -> _CachedResponse | None:
+    """The stored response, or None for a malformed entry."""
+    if not isinstance(item, dict):
+        return None
+    fetched = item.get("fetched")
+    if isinstance(fetched, bool) or not isinstance(fetched, int | float):
+        return None
+    if not math.isfinite(fetched):
+        return None
+    try:
+        body = _decode_body(item.get("body"))
+    except (TypeError, ValueError):
+        return None
+    return _CachedResponse(float(fetched), body)
+
+
+def _decode_body(encoded: object) -> bytes | None:
+    if encoded is None:
+        return None
+    if not isinstance(encoded, str):
+        raise TypeError(f"body is {type(encoded).__name__}, not a string")
+    return base64.b64decode(encoded, validate=True)
+
+
 # Records
 
 
@@ -510,6 +736,27 @@ class Notice:
     kind: str
     retracts: bool
     detail: str
+
+
+@dataclass(frozen=True, slots=True)
+class BibDetails:
+    """What a BibTeX entry needs beyond the fields `Record` already holds.
+
+    `venue_field` names the BibTeX field for the record's venue, or is empty
+    when the venue is not written. `title` and `authors` are already LaTeX:
+    Crossref and DataCite text is escaped when the record is built, so the
+    braces round an organisation survive, while arXiv's is LaTeX as submitted
+    and kept. The other text is plain and is escaped when written.
+    """
+
+    entry_type: str
+    venue_field: str
+    title: str
+    authors: tuple[str, ...]
+    volume: str | None
+    issue: str | None
+    pages: str | None
+    publisher: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -525,6 +772,8 @@ class Record:
     notices: tuple[Notice, ...]
     retraction_checked: str
     version: str
+    open_text: str | None
+    bib: BibDetails
 
 
 @dataclass(frozen=True, slots=True)
@@ -547,7 +796,7 @@ def _look_up_doi(doi: Doi, fetch: Fetch) -> Record | Missing:
     except RegistryUnavailableError as err:
         return Missing(url, f"Crossref unavailable ({err})")
     if body is None:
-        return Missing(url, "no Crossref record for this DOI")
+        return _look_up_datacite(quoted, fetch)
     try:
         work = _as_dict(_load_json(body)).get("message")
     except ValueError as err:
@@ -556,6 +805,246 @@ def _look_up_doi(doi: Doi, fetch: Fetch) -> Record | Missing:
         return Missing(url, "Crossref returned a response without a work record")
     record = _crossref_record(url, work)
     return _with_openalex(record, OPENALEX_WORKS + quoted + OPENALEX_FIELDS, fetch)
+
+
+def _look_up_datacite(quoted_doi: str, fetch: Fetch) -> Record | Missing:
+    """Look up a DOI Crossref does not know. Every reason names both registries."""
+    url = DATACITE_DOIS + quoted_doi
+    try:
+        body = fetch(url)
+    except RegistryUnavailableError as err:
+        return Missing(url, f"no Crossref record; DataCite unavailable ({err})")
+    if body is None:
+        return Missing(url, "no Crossref or DataCite record for this DOI")
+    unreadable = "no Crossref record; DataCite returned an unreadable record"
+    try:
+        data = _as_dict(_load_json(body)).get("data")
+    except ValueError as err:
+        return Missing(url, f"{unreadable} ({err})")
+    attributes = _as_dict(data).get("attributes")
+    if not isinstance(attributes, dict):
+        return Missing(url, f"{unreadable} (no attributes)")
+    record = _datacite_record(url, attributes)
+    return _with_openalex(record, OPENALEX_WORKS + quoted_doi + OPENALEX_FIELDS, fetch)
+
+
+def _datacite_record(url: str, attributes: dict[str, Any]) -> Record:
+    titles = _datacite_titles(attributes.get("titles"))
+    container = _as_dict(attributes.get("container"))
+    publisher = attributes.get("publisher")
+    if isinstance(publisher, dict):
+        publisher = publisher.get("name")
+    first_page = _text(container.get("firstPage"))
+    return Record(
+        query_url=url,
+        titles=titles,
+        authors=tuple(
+            _datacite_creator(creator).surname
+            for creator in _as_list(attributes.get("creators"))
+            if isinstance(creator, dict)
+        ),
+        years=_datacite_years(attributes.get("publicationYear")),
+        venue=_text(container.get("title")) or _text(publisher),
+        volume=_text(container.get("volume")) or None,
+        first_page=first_page or None,
+        texts=_datacite_abstract(attributes.get("descriptions")),
+        notices=(),
+        retraction_checked="",
+        version="version of record",
+        open_text=None,
+        bib=_datacite_bib(attributes, container, _text(publisher)),
+    )
+
+
+def _datacite_bib(
+    attributes: dict[str, Any], container: dict[str, Any], publisher: str
+) -> BibDetails:
+    resource_type = _as_dict(attributes.get("types")).get("resourceTypeGeneral")
+    entry_type, venue_field = _DATACITE_TYPES.get(str(resource_type), _DATACITE_OTHER)
+    if venue_field and not _text(container.get("title")):
+        # The record's venue would fall back to the publisher, not a journal.
+        entry_type, venue_field = _DATACITE_OTHER
+    first, last = _text(container.get("firstPage")), _text(container.get("lastPage"))
+    title, subtitle = _datacite_title_parts(attributes.get("titles"))
+    return BibDetails(
+        entry_type=entry_type,
+        venue_field=venue_field,
+        title=_protect_capitals(_latex_escape(_bib_title(title, subtitle))),
+        authors=tuple(
+            name
+            for creator in _as_list(attributes.get("creators"))
+            if (name := _datacite_bib_author(creator))
+        ),
+        volume=_text(container.get("volume")) or None,
+        issue=_text(container.get("issue")) or None,
+        pages="--".join(page for page in (first, last) if page) or None,
+        publisher=publisher
+        if publisher and entry_type in _DATACITE_TYPES_WITH_PUBLISHER
+        else None,
+    )
+
+
+def _datacite_bib_author(creator: object) -> str:
+    """A creator in BibTeX name form, or "" when it has no name."""
+    parsed = _datacite_creator(creator)
+    if not parsed.is_person:
+        return _bib_organisation(parsed.name)
+    return _bib_person(parsed.surname, parsed.given)
+
+
+def _datacite_titles(value: object) -> tuple[str, ...]:
+    title, subtitle = _datacite_title_parts(value)
+    return (title, f"{title} {subtitle}") if subtitle else (title,)
+
+
+def _datacite_title_parts(value: object) -> tuple[str, str]:
+    entries = [entry for entry in _as_list(value) if isinstance(entry, dict)]
+
+    def first_of(*kinds: str | None) -> str:
+        for entry in entries:
+            text = entry.get("title")
+            if entry.get("titleType") in kinds and isinstance(text, str) and text:
+                return text
+        return ""
+
+    return first_of(None), first_of("Subtitle")
+
+
+@dataclass(frozen=True, slots=True)
+class _Creator:
+    name: str
+    surname: str
+    given: str
+    # False for a group, which BibTeX would otherwise split into given and family.
+    is_person: bool
+
+
+def _datacite_creator(value: object) -> _Creator:
+    parts = _as_dict(value)
+    name = _text(parts.get("name"))
+    organisation = parts.get("nameType") == "Organizational"
+    family = _text(parts.get("familyName"))
+    if family:
+        given = _text(parts.get("givenName"))
+        return _Creator(name, family, given, is_person=not organisation)
+    if organisation:
+        return _Creator(name, name, "", is_person=False)
+    # A personal name without its parts is written "Family, Given".
+    surname, comma, given = name.partition(",")
+    return _Creator(name, surname.strip(), given.strip(), is_person=bool(comma))
+
+
+def _datacite_years(value: object) -> tuple[int, ...]:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return (value,)
+    if isinstance(value, str) and value.strip().isdigit():
+        return (int(value),)
+    return ()
+
+
+def _datacite_abstract(value: object) -> tuple[tuple[str, str], ...]:
+    for description in _as_list(value):
+        if not isinstance(description, dict):
+            continue
+        text = description.get("description")
+        if description.get("descriptionType") == "Abstract" and isinstance(text, str):
+            return (("abstract (DataCite)", normalise_passage(visible_text(text))),)
+    return ()
+
+
+def _text(value: object) -> str:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _latex_escape(text: str) -> str:
+    return text.translate(_LATEX_ESCAPES)
+
+
+def _bib_person(family: str, given: str) -> str:
+    if not given and _WHITESPACE.search(family):
+        # Alone, a family name with spaces would be split into given names.
+        return _bib_organisation(family)
+    name = _latex_escape(family)
+    return f"{name}, {_latex_escape(given)}" if given else name
+
+
+def _bib_organisation(name: str) -> str:
+    """An organisation in braces, so BibTeX does not split it into parts."""
+    return f"{{{_latex_escape(name)}}}" if name else ""
+
+
+def _protect_capitals(text: str) -> str:
+    """Brace each word with a capital after its first letter, so a style that
+    lowers case keeps acronyms such as LHC.
+
+    Maths, commands, escapes and text already in braces are left as they are.
+    """
+
+    def protect(match: re.Match[str]) -> str:
+        word = match.group("word")
+        if word is not None and any(char.isupper() for char in word[1:]):
+            return f"{{{word}}}"
+        return match.group()
+
+    return _TITLE_WORD_OR_MARKUP.sub(protect, text)
+
+
+def _arxiv_bib_title(title: str) -> str:
+    """An arXiv title is LaTeX as submitted: only a bare &, % or # is escaped."""
+    return _protect_capitals(_BARE_LATEX_SPECIAL.sub(r"\\\1", title))
+
+
+def _arxiv_bib_author(name: str) -> str:
+    escaped = _BARE_LATEX_SPECIAL.sub(r"\\\1", name)
+    return f"{{{escaped}}}" if _GROUP_AUTHOR.search(name) else escaped
+
+
+def _bib_title(title: str, subtitle: str) -> str:
+    """The main title, then ": subtitle", as plain text on one line."""
+    parts = (
+        _WHITESPACE.sub(" ", visible_text(text)).strip() for text in (title, subtitle)
+    )
+    return ": ".join(part for part in parts if part)
+
+
+def _crossref_bib(work: dict[str, Any]) -> BibDetails:
+    entry_type, venue_field = _CROSSREF_TYPES.get(
+        str(work.get("type")), _CROSSREF_OTHER
+    )
+    publisher = _text(work.get("publisher"))
+    return BibDetails(
+        entry_type=entry_type,
+        venue_field=venue_field,
+        title=_protect_capitals(
+            _latex_escape(
+                _bib_title(_first(work.get("title")), _first(work.get("subtitle")))
+            )
+        ),
+        authors=tuple(
+            name
+            for author in _as_list(work.get("author"))
+            if (name := _crossref_bib_author(author))
+        ),
+        volume=_text(work.get("volume")) or None,
+        issue=_text(work.get("issue")) or None,
+        pages=_PAGE_RANGE.sub(r"\1--\2", _text(work.get("page")))
+        or _text(work.get("article-number"))
+        or None,
+        publisher=publisher
+        if publisher and entry_type in _CROSSREF_TYPES_WITH_PUBLISHER
+        else None,
+    )
+
+
+def _crossref_bib_author(author: object) -> str:
+    """An author in BibTeX name form, or "" when it has no name."""
+    parts = _as_dict(author)
+    family = _text(parts.get("family"))
+    if family:
+        return _bib_person(family, _text(parts.get("given")))
+    return _bib_organisation(_text(parts.get("name")))
 
 
 def _crossref_record(url: str, work: dict[str, Any]) -> Record:
@@ -594,6 +1083,8 @@ def _crossref_record(url: str, work: dict[str, Any]) -> Record:
         notices=_crossref_notices(_as_list(work.get("updated-by"))),
         retraction_checked="Crossref",
         version="version of record",
+        open_text=None,
+        bib=_crossref_bib(work),
     )
 
 
@@ -616,19 +1107,24 @@ def _crossref_notices(updates: list[Any]) -> tuple[Notice, ...]:
 
 
 def _with_openalex(record: Record, url: str, fetch: Fetch) -> Record:
+    registry = record.retraction_checked
+
+    def not_checked(problem: str) -> Record:
+        # With no earlier registry, nothing was checked and the column is empty.
+        return replace(
+            record,
+            retraction_checked=f"{registry}; {problem}" if registry else "",
+        )
+
     try:
         body = fetch(url)
         work = _load_json(body) if body is not None else None
     except RegistryUnavailableError as err:
-        return replace(
-            record, retraction_checked=f"Crossref; OpenAlex unavailable ({err})"
-        )
+        return not_checked(f"OpenAlex unavailable ({err})")
     except ValueError:
-        return replace(
-            record, retraction_checked="Crossref; OpenAlex record unreadable"
-        )
+        return not_checked("OpenAlex record unreadable")
     if not isinstance(work, dict):
-        return replace(record, retraction_checked="Crossref; no OpenAlex record")
+        return not_checked("no OpenAlex record")
     notices = record.notices
     if work.get("is_retracted") is True:
         notices += (Notice("retracted", True, "OpenAlex marks it retracted"),)
@@ -637,8 +1133,20 @@ def _with_openalex(record: Record, url: str, fetch: Fetch) -> Record:
     if abstract:
         texts += (("abstract (OpenAlex)", normalise_passage(abstract)),)
     return replace(
-        record, notices=notices, texts=texts, retraction_checked="Crossref and OpenAlex"
+        record,
+        notices=notices,
+        texts=texts,
+        retraction_checked=f"{registry} and OpenAlex" if registry else "OpenAlex",
+        open_text=_open_access_url(work.get("open_access")),
     )
+
+
+def _open_access_url(value: object) -> str | None:
+    """OpenAlex's free full-text URL, if it is a web address."""
+    url = _as_dict(value).get("oa_url")
+    if isinstance(url, str) and url.startswith(("https://", "http://")):
+        return url
+    return None
 
 
 def _from_inverted_index(index: object) -> str:
@@ -717,7 +1225,7 @@ def _look_up_arxiv(arxiv: ArxivId, fetch: Fetch) -> Record | Missing:
         if isinstance(older, Missing):
             return older
         cited = older
-    return _arxiv_record(url, cited, latest)
+    return _arxiv_record(url, arxiv.base, cited, latest)
 
 
 def _arxiv_entry(url: str, fetch: Fetch) -> _ArxivEntry | Missing:
@@ -766,7 +1274,9 @@ def _leading_year(timestamp: str) -> int | None:
     return int(year) if len(year) == YEAR_DIGITS and year.isdigit() else None
 
 
-def _arxiv_record(url: str, cited: _ArxivEntry, latest: _ArxivEntry) -> Record:
+def _arxiv_record(
+    url: str, base: str, cited: _ArxivEntry, latest: _ArxivEntry
+) -> Record:
     if cited.version == latest.version:
         version = f"v{cited.version} (latest)"
     else:
@@ -806,6 +1316,17 @@ def _arxiv_record(url: str, cited: _ArxivEntry, latest: _ArxivEntry) -> Record:
         notices=notices,
         retraction_checked="arXiv comments",
         version=version,
+        open_text=f"{ARXIV_ABS}{base}v{cited.version}",
+        bib=BibDetails(
+            entry_type="misc",
+            venue_field="",
+            title=_arxiv_bib_title(cited.title),
+            authors=tuple(_arxiv_bib_author(name) for name in cited.authors if name),
+            volume=None,
+            issue=None,
+            pages=None,
+            publisher=None,
+        ),
     )
 
 
@@ -852,6 +1373,8 @@ class Verification:
     claims: tuple[ClaimCheck, ...]
     notices: tuple[Notice, ...]
     retraction_checked: str
+    open_text: str | None
+    bib: BibDetails | None
 
 
 def verify(source: CitedSource, fetch: Fetch) -> Verification:
@@ -874,13 +1397,26 @@ def verify(source: CitedSource, fetch: Fetch) -> Verification:
         claims,
         lookup.notices,
         lookup.retraction_checked,
+        lookup.open_text,
+        lookup.bib,
     )
 
 
 def unchecked(source: CitedSource, query_url: str, reason: str) -> Verification:
     """A source no record was compared with, and why."""
     return Verification(
-        source, Status.UNVERIFIED, query_url, reason, "", "", (), (), (), "not checked"
+        source,
+        Status.UNVERIFIED,
+        query_url,
+        reason,
+        "",
+        "",
+        (),
+        (),
+        (),
+        "not checked",
+        None,
+        None,
     )
 
 
@@ -1015,7 +1551,10 @@ def log_row(verification: Verification, retrieved: date) -> str:
         verification.reason or _field_summary(verification),
         _retraction_summary(verification, retrieved),
         verification.version or "not checked",
-        "<br>".join(_claim_summary(claim) for claim in verification.claims)
+        "<br>".join(
+            _claim_summary(claim, verification.open_text)
+            for claim in verification.claims
+        )
         or "not checked",
         verification.status.value,
     )
@@ -1053,21 +1592,468 @@ def _field_summary(verification: Verification) -> str:
 def _retraction_summary(verification: Verification, retrieved: date) -> str:
     if verification.notices:
         return "; ".join(notice.detail for notice in verification.notices)
-    if verification.reason:
+    if verification.reason or not verification.retraction_checked:
         return "not checked"
     return f"none found in {verification.retraction_checked} on {retrieved.isoformat()}"
 
 
-def _claim_summary(claim: ClaimCheck) -> str:
-    where = claim.found_in or "quote not found in the text read"
-    return f"{claim.claim} ({where})"
+def _claim_summary(claim: ClaimCheck, open_text: str | None) -> str:
+    if claim.found_in is not None:
+        return f"{claim.claim} ({claim.found_in})"
+    hint = f"; full text may be at {open_text}" if open_text else ""
+    return f"{claim.claim} (quote not found in the text read{hint})"
 
 
 def _cell(text: str) -> str:
     return _WHITESPACE.sub(" ", text).replace("|", "\\|").strip()
 
 
+# BibTeX
+
+
+# The statuses whose cited fields all matched the record.
+_BIB_STATUSES = frozenset({Status.VERIFIED, Status.CLAIM_NOT_CHECKED})
+
+
+def _ready_bib(verification: Verification) -> BibDetails | None:
+    """The BibTeX details of a source whose fields all matched, else None."""
+    return verification.bib if verification.status in _BIB_STATUSES else None
+
+
+def bib_entry(verification: Verification) -> str | None:
+    """The BibTeX entry for a source, or None when its fields did not all match.
+
+    The entry comes from the registry record, not from the cited fields.
+    """
+    details = _ready_bib(verification)
+    if details is None:
+        return None
+    lines = [
+        f"  {name} = {{{value}}},"
+        for name, value in _bib_fields(verification, details)
+        if value
+    ]
+    key = verification.source.key
+    return "\n".join([f"@{details.entry_type}{{{key},", *lines, "}"])
+
+
+def _bib_fields(
+    verification: Verification, details: BibDetails
+) -> list[tuple[str, str]]:
+    source = verification.source
+    identifier = source.identifier
+    # Identifiers are read by URL macros, so they are not escaped.
+    identifiers = (
+        [("eprint", str(identifier)), ("archivePrefix", "arXiv")]
+        if isinstance(identifier, ArxivId)
+        else [("doi", identifier)]
+    )
+    venue = _latex_escape(verification.venue) if details.venue_field else ""
+    return [
+        ("author", " and ".join(details.authors)),
+        ("title", details.title),
+        (details.venue_field, venue),
+        ("publisher", _latex_escape(details.publisher or "")),
+        ("volume", _latex_escape(details.volume or "")),
+        ("number", _latex_escape(details.issue or "")),
+        ("pages", _latex_escape(details.pages or "")),
+        ("year", str(source.year)),
+        *identifiers,
+    ]
+
+
+def render_bib(verifications: Sequence[Verification]) -> str:
+    """The entries of every source that may be cited, in the sources' order."""
+    entries = [entry for v in verifications if (entry := bib_entry(v)) is not None]
+    return "\n\n".join(entries) + "\n" if entries else ""
+
+
+def bib_report(
+    sources: Sequence[CitedSource],
+    verifications: Sequence[Verification],
+    path: Path,
+) -> str:
+    """One line: how many sources were written, and which were left out and why."""
+    ready = {v.source.key for v in verifications if _ready_bib(v) is not None}
+    statuses = {v.source.key: v.status.value for v in verifications}
+    left_out = [
+        f"{source.key} ({statuses.get(source.key, 'NOT CHECKED')})"
+        for source in sources
+        if source.key not in ready
+    ]
+    line = f"wrote {len(ready)} of {len(sources)} sources to {path}"
+    return f"{line}; left out: {', '.join(left_out)}" if left_out else line
+
+
+# Draft audit
+
+
+MAX_UNCHECKED_INTEGER = 10
+# `\nocite{*}` cites every source in the bibliography.
+ALL_SOURCES_KEY = "*"
+NO_CITES_NOTICE = (
+    r"no LaTeX \cite or Pandoc [@key] citations found, "
+    "so keys and numbers were not checked"
+)
+
+_LATEX_CITE = re.compile(
+    r"\\[A-Za-z]*[Cc]ite[A-Za-z]*\*?(?:\s*\[[^\[\]]*\]){0,2}\s*\{([^{}]*)\}"
+)
+# An escaped character (`\%` included) is kept; an unescaped `%` runs to the line end.
+_LATEX_COMMENT = re.compile(r"\\.|%[^\n]*")
+_PANDOC_BRACKET = re.compile(r"\[([^\[\]]*)\]")
+_PANDOC_KEY_BODY = r"@(\w(?:\w|[:.#$%&+?<>~/-](?=\w))*)"
+_PANDOC_KEY = re.compile(r"(?<!\w)-?" + _PANDOC_KEY_BODY)
+# Outside brackets Pandoc reads `@key` only after a line start, a space or an
+# opening bracket, so `me@host` and `x.@y` are not citations.
+_PANDOC_BARE_KEY = re.compile(r"(?:^|(?<=[\s(\[{]))-?" + _PANDOC_KEY_BODY, re.MULTILINE)
+# Kept equal to check.py's GAP_MARKER: the scripts cannot import each other.
+GAP_MARKER = (
+    r"\[(?:UNVERIFIED|CITATION NEEDED|CLAIM NOT CHECKED|DATA NEEDED)(?::[^\]]*)?\]"
+)
+_MARKER = re.compile(GAP_MARKER, re.IGNORECASE)
+# A sentence ends at terminal punctuation before a capital or backslash, at a
+# blank line, and around a Markdown heading line, which belongs to no sentence.
+_SENTENCE_BREAK = re.compile(
+    r"(?<=[.!?])\s+(?=[A-Z\\])|\n[ \t]*\n\s*|^#{1,6}[ \t].*$", re.MULTILINE
+)
+# A thousands comma is a comma between a digit and exactly three more digits.
+_NUMBER = re.compile(r"\d+(?:,\d{3}(?!\d))*(?:\.\d+)?")
+
+
+class Severity(StrEnum):
+    ERROR = "error"
+    WARNING = "warning"
+    NOTE = "note"
+
+
+class FindingKind(StrEnum):
+    CITE = "cite"
+    NUMBER = "number"
+    MARKER = "marker"
+
+
+@dataclass(frozen=True, slots=True)
+class AuditFinding:
+    line: int
+    severity: Severity
+    kind: FindingKind
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class DraftAudit:
+    has_cites: bool
+    findings: tuple[AuditFinding, ...]
+    uncited: tuple[str, ...]
+
+    @property
+    def has_errors(self) -> bool:
+        return any(f.severity is Severity.ERROR for f in self.findings)
+
+
+@dataclass(frozen=True, slots=True)
+class _Span:
+    """A stretch of the draft that is not prose: a cite or a gap marker."""
+
+    start: int
+    end: int
+    keys: tuple[str, ...]
+
+
+_LineOf = Callable[[int], int]
+
+
+def _line_of(text: str) -> _LineOf:
+    """A function from a character offset in `text` to its 1-based line number."""
+    breaks = [match.start() for match in re.finditer("\n", text)]
+
+    def line_number(offset: int) -> int:
+        return bisect.bisect_left(breaks, offset) + 1
+
+    return line_number
+
+
+def audit_draft(
+    text: str,
+    sources: Sequence[CitedSource],
+    verifications: Sequence[Verification],
+    *,
+    latex: bool = False,
+) -> DraftAudit:
+    """Check a draft's cites, numbers and gap markers against the verified sources.
+
+    A LaTeX draft has its `%` comments dropped first, so a commented-out cite
+    is not audited. Line numbers are unchanged.
+    """
+    if latex:
+        text = _LATEX_COMMENT.sub(_keep_escape, text)
+    line_of = _line_of(text)
+    by_key = {source.key: source for source in sources}
+    cites = _cite_spans(text, by_key.keys())
+    markers = list(_MARKER.finditer(text))
+    spans = sorted(
+        [*cites, *(_Span(m.start(), m.end(), ()) for m in markers)],
+        key=lambda span: span.start,
+    )
+    findings: list[AuditFinding] = []
+    uncited: tuple[str, ...] = ()
+    if cites:
+        statuses = {v.source.key: v.status for v in verifications}
+        findings += _cite_findings(cites, line_of, by_key, statuses)
+        findings += _number_findings(text, spans, by_key, line_of)
+        cited = {key for span in cites for key in span.keys}
+        if ALL_SOURCES_KEY not in cited:
+            uncited = tuple(key for key in by_key if key not in cited)
+    findings += (
+        AuditFinding(
+            line_of(m.start()), Severity.NOTE, FindingKind.MARKER, _squash(m.group())
+        )
+        for m in markers
+    )
+    ordered = sorted(dict.fromkeys(findings), key=lambda finding: finding.line)
+    return DraftAudit(bool(cites), tuple(ordered), uncited)
+
+
+def _keep_escape(match: re.Match[str]) -> str:
+    return match.group() if match.group().startswith("\\") else ""
+
+
+def _squash(text: str) -> str:
+    return _WHITESPACE.sub(" ", text)
+
+
+def _cite_spans(text: str, source_keys: Collection[str]) -> list[_Span]:
+    spans = [
+        _Span(match.start(), match.end(), _split_keys(match.group(1)))
+        for match in _LATEX_CITE.finditer(text)
+    ]
+    for bracket in _PANDOC_BRACKET.finditer(text):
+        keys = tuple(_PANDOC_KEY.findall(bracket.group(1)))
+        spans.append(_Span(bracket.start(), bracket.end(), keys))
+    spans += _bare_pandoc_spans(text, source_keys, spans)
+    return sorted((span for span in spans if span.keys), key=lambda span: span.start)
+
+
+def _bare_pandoc_spans(
+    text: str, source_keys: Collection[str], taken: Sequence[_Span]
+) -> list[_Span]:
+    """Pandoc `@key` cites outside brackets.
+
+    Only a key in the sources counts, so a mention is not read as a citation.
+    """
+    return [
+        _Span(match.start(), match.end(), (match.group(1),))
+        for match in _PANDOC_BARE_KEY.finditer(text)
+        if match.group(1) in source_keys
+        and not any(span.start <= match.start() < span.end for span in taken)
+    ]
+
+
+def _split_keys(keys: str) -> tuple[str, ...]:
+    return tuple(key for part in keys.split(",") if (key := part.strip()))
+
+
+def _cite_findings(
+    cites: Sequence[_Span],
+    line_of: _LineOf,
+    by_key: dict[str, CitedSource],
+    statuses: dict[str, Status],
+) -> list[AuditFinding]:
+    found = (
+        _key_finding(line_of(span.start), key, by_key, statuses)
+        for span in cites
+        for key in span.keys
+    )
+    return [finding for finding in found if finding is not None]
+
+
+def _key_finding(
+    line: int,
+    key: str,
+    by_key: dict[str, CitedSource],
+    statuses: dict[str, Status],
+) -> AuditFinding | None:
+    if key == ALL_SOURCES_KEY:
+        return None
+    if key not in by_key:
+        return AuditFinding(
+            line,
+            Severity.ERROR,
+            FindingKind.CITE,
+            f"`{key}` is cited but not in the sources",
+        )
+    status = statuses[key]
+    if status is Status.VERIFIED:
+        return None
+    severity = (
+        Severity.WARNING if status is Status.CLAIM_NOT_CHECKED else Severity.ERROR
+    )
+    text = f"`{key}` is cited but {status.value}"
+    return AuditFinding(line, severity, FindingKind.CITE, text)
+
+
+def _numbers(text: str) -> list[str]:
+    return [number for _, number in _numbers_at(text, 0, len(text))]
+
+
+def _numbers_at(text: str, begin: int, end: int) -> list[tuple[int, str]]:
+    """The numbers in text[begin:end], thousands commas removed, with their offsets."""
+    return [
+        (match.start(), match.group().replace(",", ""))
+        for match in _NUMBER.finditer(text, begin, end)
+    ]
+
+
+def _number_findings(
+    text: str,
+    spans: Sequence[_Span],
+    by_key: dict[str, CitedSource],
+    line_of: _LineOf,
+) -> list[AuditFinding]:
+    quoted = {
+        key: {n for evidence in source.evidence for n in _numbers(evidence.quote)}
+        for key, source in by_key.items()
+    }
+    starts = [span.start for span in spans]
+    findings: list[AuditFinding] = []
+    for begin, end in _sentence_bounds(_mask(text, spans)):
+        first = bisect.bisect_left(starts, begin)
+        inside = spans[first : bisect.bisect_left(starts, end)]
+        keys = list(dict.fromkeys(k for s in inside for k in s.keys if k in by_key))
+        if not keys:
+            continue
+        supported = set().union(*(quoted[key] for key in keys))
+        years = {str(by_key[key].year) for key in keys}
+        names = ", ".join(f"`{key}`" for key in keys)
+        findings += (
+            AuditFinding(
+                line_of(offset),
+                Severity.WARNING,
+                FindingKind.NUMBER,
+                f"{number} appears in no quote from {names}",
+            )
+            for offset, number in _prose_numbers(text, begin, end, inside)
+            if _needs_quote(number, years) and number not in supported
+        )
+    return findings
+
+
+def _needs_quote(number: str, years: set[str]) -> bool:
+    if number in years:
+        return False
+    return "." in number or _is_above_unchecked_integer(number)
+
+
+def _is_above_unchecked_integer(digits: str) -> bool:
+    # float, not int: int() raises on a string of thousands of digits, where
+    # float() gives inf.
+    return float(digits) > MAX_UNCHECKED_INTEGER
+
+
+def _mask(text: str, spans: Sequence[_Span]) -> str:
+    """The text with each span's body replaced by underscores, length kept.
+
+    The first character stays, so a cite that opens a sentence still starts one.
+    """
+    pieces: list[str] = []
+    position = 0
+    for span in spans:
+        if span.end <= position:
+            continue
+        begin = max(span.start, position)
+        pieces += [text[position:begin], text[begin], "_" * (span.end - begin - 1)]
+        position = span.end
+    pieces.append(text[position:])
+    return "".join(pieces)
+
+
+def _sentence_bounds(masked: str) -> list[tuple[int, int]]:
+    bounds: list[tuple[int, int]] = []
+    begin = 0
+    for gap in [*_SENTENCE_BREAK.finditer(masked), None]:
+        end = len(masked) if gap is None else gap.start()
+        sentence = masked[begin:end]
+        bounds.append((begin + len(sentence) - len(sentence.lstrip()), end))
+        begin = end if gap is None else gap.end()
+    return bounds
+
+
+def _prose_numbers(
+    text: str, begin: int, end: int, spans: Sequence[_Span]
+) -> list[tuple[int, str]]:
+    """The numbers of a sentence that lie outside its cites and markers."""
+    found: list[tuple[int, str]] = []
+    position = begin
+    for span in spans:
+        if span.end <= position:
+            continue
+        found += _numbers_at(text, position, max(span.start, position))
+        position = span.end
+    return found + _numbers_at(text, position, end)
+
+
+def render_audit(audit: DraftAudit) -> str:
+    """The audit as Markdown: a bullet per finding, then a count line."""
+    bullets = [_bullet(finding) for finding in audit.findings]
+    bullets += (f"- `{key}` is in the sources but never cited" for key in audit.uncited)
+    notice = "" if audit.has_cites else f"{NO_CITES_NOTICE}\n\n"
+    body = "\n".join(bullets) if bullets else "Nothing to report."
+    return f"\n## Draft audit\n\n{notice}{body}\n\n{_audit_counts(audit)}"
+
+
+def _bullet(finding: AuditFinding) -> str:
+    if finding.kind is FindingKind.MARKER:
+        return f"- line {finding.line}: open marker {finding.text}"
+    return f"- line {finding.line}: {finding.severity.value}: {finding.text}"
+
+
+def _audit_counts(audit: DraftAudit) -> str:
+    def count(severity: Severity) -> int:
+        return sum(1 for finding in audit.findings if finding.severity is severity)
+
+    markers = sum(1 for finding in audit.findings if finding.kind is FindingKind.MARKER)
+    parts = [
+        _counted(count(Severity.ERROR), "error"),
+        _counted(count(Severity.WARNING), "warning"),
+        _counted(markers, "open marker"),
+        _counted(len(audit.uncited), "uncited source"),
+    ]
+    return f"Draft audit: {', '.join(parts)}."
+
+
+def _counted(number: int, noun: str) -> str:
+    return f"{number} {noun}" if number == 1 else f"{number} {noun}s"
+
+
 # Command line
+
+
+def _bib_path_problem(path: Path, sources: str, draft: Path | None) -> str | None:
+    if path.is_dir():
+        return "it is a directory"
+    if not path.parent.is_dir():
+        return f"the folder {path.parent} does not exist"
+    if sources != "-" and path.resolve() == Path(sources).resolve():
+        return "it is the sources file"
+    if draft is not None and path.resolve() == draft.resolve():
+        return "it is the draft file"
+    return None
+
+
+def _write_bib(
+    sources: Sequence[CitedSource],
+    verifications: Sequence[Verification],
+    path: Path,
+) -> bool:
+    """Write the BibTeX file and report it. False when it could not be written."""
+    try:
+        path.write_text(render_bib(verifications), encoding="utf-8", newline="\n")
+    except OSError as err:
+        print(f"cannot write {path}: {err}", file=sys.stderr)
+        return False
+    print(bib_report(sources, verifications, path), file=sys.stderr)
+    return True
 
 
 def _read_input(path: str) -> tuple[str, Path]:
@@ -1077,34 +2063,37 @@ def _read_input(path: str) -> tuple[str, Path]:
         with Path(path).open(encoding="utf-8") as handle:
             text = handle.read(MAX_INPUT_CHARACTERS + 1)
         base_dir = Path(path).resolve().parent
-    if len(text) > MAX_INPUT_CHARACTERS:
-        raise ValueError(f"input is over {MAX_INPUT_CHARACTERS} characters")
+    _require_within_limit(text)
     return text, base_dir
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Check cited references and quoted passages against registries."
-    )
-    parser.add_argument(
-        "sources", help="JSON Lines file of cited sources, or - for standard input"
-    )
-    args = parser.parse_args(argv)
-    # Sources and logs are UTF-8 files; a Windows console defaults to a legacy
-    # code page that would garble names on the way in and out.
-    for stream in (sys.stdin, sys.stdout):
-        if isinstance(stream, io.TextIOWrapper):
-            stream.reconfigure(encoding="utf-8")
-    try:
-        text, base_dir = _read_input(args.sources)
-        sources = parse_sources(text, base_dir)
-    except (OSError, ValueError) as err:
-        print(f"cannot verify {args.sources}: {err}", file=sys.stderr)
-        return 2
+def _require_within_limit(text: str) -> None:
+    if len(text) > MAX_INPUT_CHARACTERS:
+        raise ValueError(f"input is over {MAX_INPUT_CHARACTERS} characters")
 
-    client = RegistryClient()
-    retrieved = date.today()
+
+def _read_draft(path: Path) -> str:
+    with path.open(encoding="utf-8") as handle:
+        text = handle.read(MAX_INPUT_CHARACTERS + 1)
+    _require_within_limit(text)
+    return text
+
+
+def _cache_path(sources: str) -> Path:
+    path = Path(sources).resolve()
+    return path.with_name(f"{path.stem}.cache.json")
+
+
+def _check_all(
+    sources: Sequence[CitedSource], fetch: Fetch
+) -> tuple[list[Verification], int]:
+    """Check each source, printing each row as made.
+
+    Returns the verifications made, which after a fault are those before it,
+    and the exit code.
+    """
     verifications: list[Verification] = []
+    retrieved = date.today()
     print(LOG_HEADER, flush=True)
     deadline = time.monotonic() + MAX_RUN_SECONDS
     for source in sources:
@@ -1116,16 +2105,107 @@ def main(argv: list[str] | None = None) -> int:
                     f"run time limit of {MAX_RUN_SECONDS:.0f} s reached; rerun",
                 )
             else:
-                verification = verify(source, client)
+                verification = verify(source, fetch)
         except Exception as err:
             # The process boundary: an unforeseen fault is reported once, and
             # the rows already printed stay valid.
             print(f"verify.py stopped at {source.key}: {err!r}", file=sys.stderr)
-            return 3
+            return verifications, 3
         verifications.append(verification)
         print(log_row(verification, retrieved), flush=True)
     print(f"\n{log_summary(verifications)}")
-    return 0 if all(v.status is Status.VERIFIED for v in verifications) else 1
+    all_verified = all(v.status is Status.VERIFIED for v in verifications)
+    return verifications, 0 if all_verified else 1
+
+
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Check cited references and quoted passages against registries."
+    )
+    parser.add_argument(
+        "sources", help="JSON Lines file of cited sources, or - for standard input"
+    )
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="ignore cached responses and fetch again",
+    )
+    parser.add_argument(
+        "--bib",
+        type=Path,
+        metavar="PATH",
+        help="write a BibTeX file of the sources whose cited fields all matched",
+    )
+    parser.add_argument(
+        "--draft",
+        type=Path,
+        metavar="PATH",
+        help="audit the citations, numbers and gap markers of a draft",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv)
+    problem = (
+        None
+        if args.bib is None
+        else _bib_path_problem(args.bib, args.sources, args.draft)
+    )
+    if problem is not None:
+        print(f"cannot write {args.bib}: {problem}", file=sys.stderr)
+        return 2
+    # Sources and logs are UTF-8 files; a Windows console defaults to a legacy
+    # code page that would garble names on the way in and out.
+    for stream in (sys.stdin, sys.stdout):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding="utf-8")
+    try:
+        text, base_dir = _read_input(args.sources)
+        sources = parse_sources(text, base_dir)
+    except (OSError, ValueError) as err:
+        print(f"cannot verify {args.sources}: {err}", file=sys.stderr)
+        return 2
+    try:
+        draft = None if args.draft is None else _read_draft(args.draft)
+    except (OSError, ValueError) as err:
+        print(f"cannot audit {args.draft}: {err}", file=sys.stderr)
+        return 2
+
+    verifications, code = _run_checks(sources, args.sources, refresh=args.refresh)
+    is_latex = args.draft is not None and args.draft.suffix.lower() == ".tex"
+    code = _audited_code(draft, is_latex, sources, verifications, code)
+    if args.bib is not None and not _write_bib(sources, verifications, args.bib):
+        return 3
+    return code
+
+
+def _audited_code(
+    draft: str | None,
+    is_latex: bool,
+    sources: Sequence[CitedSource],
+    verifications: Sequence[Verification],
+    code: int,
+) -> int:
+    """Print the draft audit, and return the exit code it leaves."""
+    if draft is None or code not in (0, 1):
+        return code
+    audit = audit_draft(draft, sources, verifications, latex=is_latex)
+    print(render_audit(audit))
+    return 1 if audit.has_errors else code
+
+
+def _run_checks(
+    sources: Sequence[CitedSource], sources_path: str, *, refresh: bool
+) -> tuple[list[Verification], int]:
+    client = RegistryClient()
+    if sources_path == "-":
+        return _check_all(sources, client)
+    cache = ResponseCache(client, _cache_path(sources_path), refresh=refresh)
+    try:
+        return _check_all(sources, cache)
+    finally:
+        cache.save()
 
 
 if __name__ == "__main__":

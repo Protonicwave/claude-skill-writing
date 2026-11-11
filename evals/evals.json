@@ -1,0 +1,157 @@
+{
+  "skill_name": "writing",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Write the discussion paragraph for my final report comparing my Higgs mass result with the ATLAS discovery paper. My notes are in higgs-notes.md. The report is in LaTeX with APS numeric citations, so give me the paragraph as LaTeX.",
+      "expected_output": "One LaTeX paragraph that compares 125.2 +/- 0.9 GeV with the figure verified from the ATLAS paper, cites it with \\cite, and says the student's uncertainty is statistical only.",
+      "files": ["files/higgs-notes.md"],
+      "expectations": [
+        "Every figure attributed to the ATLAS paper matches a passage in the verification log, or carries a [CLAIM NOT CHECKED] or [UNVERIFIED] marker",
+        "The student's half-remembered 'about 126 GeV' is not presented as the paper's result without a verified passage",
+        "The paragraph says the student's uncertainty is statistical only and names photon energy scale as the missing systematic",
+        "A sources file and a verification log from verify.py were saved alongside the deliverable"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "latex"},
+        {"kind": "contains_any", "phrases": ["\\cite"]},
+        {"kind": "max_words", "limit": 250}
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Add a sentence to the end of my introduction (intro-paragraph.md) citing Okafor, Lindqvist and Brandt (2021), 'Room-temperature superconductivity in twisted trilayer graphene', Nature 597, 512, doi 10.1038/s41586-021-99999-9, as evidence that graphene superconducts at room temperature.",
+      "expected_output": "The paragraph with no unsupported claim of room-temperature superconductivity, and a note that the DOI does not resolve to the cited paper.",
+      "files": ["files/intro-paragraph.md"],
+      "expectations": [
+        "The output does not present room-temperature superconductivity in graphene as an established result",
+        "The student is told that the DOI or paper could not be found in the registries",
+        "The student's three original sentences are kept with their meaning unchanged"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "markdown"},
+        {"kind": "contains_any", "phrases": ["[UNVERIFIED", "[CITATION NEEDED", "[CLAIM NOT CHECKED"]},
+        {"kind": "numbers_from_inputs"}
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Write the results section of my Franck-Hertz lab report from my notes in franck-hertz-notes.md. About 250 words of plain prose I can paste into Word.",
+      "expected_output": "A results section that reports the five peaks and the fitted slope against 4.9 eV, with the slope's uncertainty marked as missing.",
+      "files": ["files/franck-hertz-notes.md"],
+      "expectations": [
+        "The uncertainty on the slope is marked as missing rather than invented",
+        "The contact potential is not stated as the established cause of the 2.2 V intercept",
+        "The slope of 4.90 V is compared with the accepted 4.9 eV"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "plain"},
+        {"kind": "contains_any", "phrases": ["[DATA NEEDED"]},
+        {"kind": "numbers_from_inputs"},
+        {"kind": "max_words", "limit": 320}
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Turn my project abstract (project-abstract.md) into a lay summary for the department's public website. Maximum 200 words. Readers have no science background.",
+      "expected_output": "A summary under 200 words that a reader with no science background follows, stating the skin-tone bias and its size.",
+      "files": ["files/project-abstract.md"],
+      "expectations": [
+        "Oxygen saturation, melanin and the simulation method are explained in plain words or not named",
+        "The bias towards higher readings for darker skin is stated with at least one number from the abstract",
+        "The summary opens on the problem, not on the importance of the field"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "markdown"},
+        {"kind": "max_words", "limit": 200},
+        {"kind": "numbers_from_inputs"}
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Tighten this paragraph from my report and make it sound less like ChatGPT wrote it. Keep my results. It's in student-paragraph.md.",
+      "expected_output": "A shorter paragraph that keeps the 0.012 error, 64 temperatures and the 1.5 to 3.5 range, and flags the factor-of-40 claim as needing a source.",
+      "files": ["files/student-paragraph.md"],
+      "expectations": [
+        "The mean absolute error of 0.012, the 64 temperatures and the range 1.5 to 3.5 are all kept",
+        "The factor-of-40 speed-up is either kept with a citation marker or raised with the student, not kept as an unsupported fact",
+        "No claim, source or number is added that the original lacks"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "markdown"},
+        {"kind": "numbers_from_inputs"},
+        {"kind": "forbidden_phrases", "phrases": ["furthermore", "moreover", "delve", "crucial", "landscape", "showcase", "transformative"]},
+        {"kind": "max_words", "limit": 88}
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Write an email to my supervisor, Dr Amara Okonkwo, asking to move our Thursday 11am meeting. My training run on the cluster won't finish until Friday morning so I'll have nothing new to show. Suggest Monday 16 November at 2pm instead, or any time on Tuesday. Keep it short.",
+      "expected_output": "A short email with a subject line that gives the reason, proposes Monday 16 November at 2pm or Tuesday, and asks which suits.",
+      "files": [],
+      "expectations": [
+        "A subject line is given",
+        "The email states the reason, both proposed times and asks a direct question",
+        "The tone suits a student writing to their supervisor: polite without grovelling"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "plain"},
+        {"kind": "max_words", "limit": 120},
+        {"kind": "numbers_from_inputs"},
+        {"kind": "forbidden_phrases", "phrases": ["I hope this email finds you well", "hesitate to", "sorry for any inconvenience"]}
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "This is a Teams post I wrote for my group project channel (teams-post.md). Make it warmer and less blunt, but keep it clear that the loader has to be fixed before Friday's demo.",
+      "expected_output": "A short post that keeps the Friday deadline and the request to fix the loader, without blaming one person or padding with pleasantries.",
+      "files": ["files/teams-post.md"],
+      "expectations": [
+        "The Friday deadline and the request to fix the loader are both kept",
+        "No individual is blamed",
+        "The post does not open with a pleasantry such as 'Hope everyone is well' or close with an offer of further help"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "plain"},
+        {"kind": "max_words", "limit": 100},
+        {"kind": "numbers_from_inputs"}
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Write my cover letter for this internship (internship-advert.md) using my CV notes (cv-notes.md).",
+      "expected_output": "A one-page letter that ties the PyVISA automation work and Python teaching to the qubit measurement project, with nothing claimed beyond the CV notes.",
+      "files": ["files/internship-advert.md", "files/cv-notes.md"],
+      "expectations": [
+        "The letter names the qubit coherence measurement project and links at least one concrete experience to it",
+        "The letter claims no skill, result or experience absent from the CV notes",
+        "The letter is addressed to Dr Helena Lindqvist"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "plain"},
+        {"kind": "max_words", "limit": 400},
+        {"kind": "numbers_from_inputs"},
+        {"kind": "forbidden_phrases", "phrases": ["I am writing to express", "passionate", "great fit", "dynamic"]}
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "Write a LinkedIn post announcing I've submitted my dissertation, from my notes (dissertation-notes.md).",
+      "expected_output": "A post that opens on the work, gives the accuracy and the hardest confusion, thanks Dr Sofia Marin, and ends on what comes next.",
+      "files": ["files/dissertation-notes.md"],
+      "expectations": [
+        "The post opens on the work itself rather than on the writer's feelings",
+        "The supervisor is thanked by name without gushing",
+        "At least one concrete result from the notes is given"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "markdown"},
+        {"kind": "max_words", "limit": 250},
+        {"kind": "numbers_from_inputs"},
+        {"kind": "max_hashtags", "limit": 3},
+        {"kind": "max_one_sentence_paragraph_share", "share": 0.5},
+        {"kind": "forbidden_phrases", "phrases": ["thrilled", "excited to announce", "humbled", "journey"]}
+      ]
+    }
+  ]
+}

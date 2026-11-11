@@ -2,7 +2,15 @@ import time
 from pathlib import Path
 
 import pytest
-from check import Format, Issue, Severity, find_issues, main, split_sentences
+from check import (
+    Format,
+    Issue,
+    Severity,
+    find_issues,
+    main,
+    outline,
+    split_sentences,
+)
 
 EM_DASH = "\u2014"
 EN_DASH = "\u2013"
@@ -355,3 +363,114 @@ def test_repeated_latex_line_breaks_are_checked_quickly() -> None:
     start = time.perf_counter()
     find_issues("\\\\[2pt] word " * 16000, Format.LATEX)
     assert time.perf_counter() - start < 2.0
+
+
+OUTLINED_DRAFT = (
+    "# Method\n"
+    "\n"
+    "We swept the pump power. The camera recorded each step.\n"
+    "\n"
+    "Above 1.6 W the pattern split\n"
+    "into two lobes. That was the threshold.\n"
+    "\n"
+    "- one item\n"
+)
+
+
+def test_outline_gives_each_body_paragraph_first_sentence_with_its_line() -> None:
+    assert outline(OUTLINED_DRAFT, Format.MARKDOWN) == [
+        (3, "We swept the pump power."),
+        (5, "Above 1.6 W the pattern split into two lobes."),
+        (8, "one item"),
+    ]
+
+
+@pytest.mark.parametrize("text", ["", "# Only a heading\n"])
+def test_outline_of_a_draft_without_body_is_empty(text: str) -> None:
+    assert outline(text, Format.MARKDOWN) == []
+
+
+def test_cli_outline_prints_sentences_and_runs_no_checks(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    draft = tmp_path / "draft.md"
+    draft.write_text(f"The fit failed{EM_DASH}badly. It was redone.", encoding="utf-8")
+    assert main([str(draft), "--outline"]) == 0
+    assert capsys.readouterr().out == f"{draft}:1: The fit failed{EM_DASH}badly.\n"
+
+
+def test_cli_outline_of_unreadable_draft_exits_2(tmp_path: Path) -> None:
+    assert main([str(tmp_path / "absent.md"), "--outline"]) == 2
+
+
+def abbreviation_issues(text: str, fmt: Format = Format.PLAIN) -> list[Issue]:
+    return [i for i in find_issues(text, fmt) if i.rule == "abbreviation"]
+
+
+@pytest.mark.parametrize(
+    ("text", "fmt"),
+    [
+        ("A light-emitting diode (LED) lit. The LED was bright.", Format.PLAIN),
+        ("Light-emitting diodes (LEDs) lit. Two LEDs were bright.", Format.PLAIN),
+        ("A light-emitting diode (LED) lit. Two LEDs were bright.", Format.PLAIN),
+        ("The UK and US teams used a GPU and two CPUs to sequence DNA.", Format.PLAIN),
+        ("Part II covers Type IV and Type XIV defects.", Format.PLAIN),
+        ("CO2 at 3 MHz in NaCl, measured for a PhD.", Format.PLAIN),
+        ("# FPGA results\n\nThe board ran.", Format.MARKDOWN),
+        ("\\section{FPGA results}\nThe board ran.", Format.LATEX),
+        ("The ratio $\\mathrm{SNR}$ rose.", Format.MARKDOWN),
+        ("The ratio $SNR$ rose.", Format.LATEX),
+        ("Run `FPGA` mode.", Format.MARKDOWN),
+        ("The result is in \\cite{FPGA2020}.", Format.LATEX),
+        ("The gain was [DATA NEEDED: SNR] [CLAIM NOT CHECKED: paywall].", Format.PLAIN),
+    ],
+)
+def test_abbreviation_rule_spares_defined_exempt_and_hidden_terms(
+    text: str, fmt: Format
+) -> None:
+    assert abbreviation_issues(text, fmt) == []
+
+
+def test_undefined_abbreviation_is_reported_once_at_first_use() -> None:
+    text = "The board was idle.\n\nThe FPGA ran.\nThe FPGA stopped. The FPGA reset."
+    assert abbreviation_issues(text) == [
+        Issue(
+            3,
+            "abbreviation",
+            Severity.WARNING,
+            "'FPGA' is never defined: spell it out at first use, with the"
+            " abbreviation in brackets",
+        )
+    ]
+
+
+def test_abbreviation_used_before_its_definition_is_reported_at_first_use() -> None:
+    text = "The FPGAs ran.\n\nA field-programmable gate array (FPGA) is fast."
+    assert abbreviation_issues(text) == [
+        Issue(
+            1,
+            "abbreviation",
+            Severity.WARNING,
+            "'FPGA' is used before its definition on line 3: define it at first use",
+        )
+    ]
+
+
+def test_abbreviation_defined_twice_is_reported_at_the_second_definition() -> None:
+    text = (
+        "A field-programmable gate array (FPGA) ran.\n"
+        "\n"
+        "The field-programmable gate array (FPGA) was fast."
+    )
+    assert abbreviation_issues(text) == [
+        Issue(
+            3,
+            "abbreviation",
+            Severity.WARNING,
+            "'FPGA' is already defined on line 1: use the abbreviation alone",
+        )
+    ]
+
+
+def test_capitals_that_are_not_roman_numerals_are_checked() -> None:
+    assert [i.line for i in abbreviation_issues("The DC supply was stable.")] == [1]
