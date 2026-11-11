@@ -1,6 +1,6 @@
 ---
 name: writing
-description: Writes and edits prose that people read, in a natural human voice with UK English and no machine-writing giveaways. Use for reports, dissertations, project plans, papers, abstracts, lab books, essays, literature reviews, lay summaries, explainers for non-technical readers, emails and Teams or Slack messages, and for any request to draft, rewrite, tighten, humanise or rephrase such text. Covers finding and verifying every citation so no source, figure or result is invented. Not for code comments, docstrings, commit messages, pull request descriptions or READMEs.
+description: Writes and edits prose that people read, in a natural human voice with UK English and no machine-writing giveaways. Use for reports, dissertations, project plans, papers, abstracts, lab books, essays, literature reviews, lay summaries, explainers for non-technical readers, emails and Teams or Slack messages, cover letters, personal statements, blog and LinkedIn posts, and for any request to draft, rewrite, tighten, humanise, rephrase or change the tone of such text. Covers finding and verifying every citation so no source, figure or result is invented. Not for code comments, docstrings, commit messages, pull request descriptions or READMEs.
 ---
 
 # Writing
@@ -20,6 +20,8 @@ Read the matching file in `registers/` before drafting. Choose from the request 
 | Essay, reflective piece, argued answer to a question | `registers/essay.md` |
 | Lay summary, outreach piece, explainer for a reader outside physics or computing | `registers/explainer.md` |
 | Email, Teams or Slack post, message to a supervisor, teammate or client | `registers/message.md` |
+| Cover letter, personal statement, supporting statement, application for a job, placement, scholarship or research degree | `registers/application.md` |
+| Blog post, LinkedIn post, newsletter item | `registers/post.md` |
 
 When the request names a tone ("warmer", "more formal", "less blunt", "shorter", "more confident"), read `voice.md` as well. Tone is five dials set on top of the register, and no tone changes a fact, a request or a hedge's size.
 
