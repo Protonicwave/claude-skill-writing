@@ -24,6 +24,7 @@ import re
 import statistics
 import sys
 from bisect import bisect_right
+from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 from itertools import accumulate
@@ -178,6 +179,7 @@ CONNECTIVE_OPENERS = (
     r"Additionally|Moreover|Furthermore|Notably|Importantly|Interestingly|Crucially"
     r"|Ultimately|Overall|In addition"
 )
+GAP_MARKER = r"\[(?:UNVERIFIED|CITATION NEEDED|CLAIM NOT CHECKED|DATA NEEDED)[^\]]*\]"
 US_WORDS = (
     r"colors?|colored|coloring|behaviors?|behavioral|favors?|favored|favorite|honors?"
     # Not gray: it is also the SI unit of absorbed dose.
@@ -257,7 +259,7 @@ PROSE_RULES: tuple[PatternRule, ...] = (
     _rule(
         "unresolved-marker",
         WARN,
-        r"\[(?:UNVERIFIED|CITATION NEEDED|CLAIM NOT CHECKED|DATA NEEDED)[^\]]*\]",
+        GAP_MARKER,
         "unresolved marker '{hit}': verify the source or cut the claim",
         flags=NOCASE,
     ),
@@ -282,6 +284,15 @@ SENTENCE_BREAK = re.compile(
     r"(?<=[.!?])[\"'\u201d\u2019)\]]*\s+(?=[\"'\u201c\u2018(\[]?[A-Z0-9])"
 )
 WORD = re.compile(r"[A-Za-z0-9][\w'\u2019-]*")
+
+# Two or more capitals as a whole word; a plural s counts as the singular, so
+# GPUs is GPU. CO2, MHz and PhD are not whole-word capitals and never match.
+CAPITALISED_TERM = re.compile(r"(?P<open>\()?\b(?P<term>[A-Z]{2,})s?\b(?P<close>\))?")
+EXEMPT_ABBREVIATIONS = frozenset({"UK", "US", "CPU", "GPU", "DNA"})
+# Only I, V and X: DC, CD and MC are abbreviations far more often than numbers.
+ROMAN_NUMERAL = re.compile(r"X{0,3}(?:IX|IV|V?I{0,3})")
+# A gap marker's capitals are the skill's own vocabulary, not abbreviations.
+GAP_MARKER_SPAN = re.compile(GAP_MARKER, re.IGNORECASE)
 PROTECTED_DOT = "\x00"
 
 
@@ -456,6 +467,60 @@ def _document_rhythm_issue(body: list[Paragraph]) -> Issue | None:
     return Issue(body[0].lines[0].number, "document-rhythm", WARN, message)
 
 
+def _abbreviations(body: list[Paragraph]) -> Iterator[tuple[str, int, bool]]:
+    """Each checked abbreviation in reading order, with its line and whether it
+    is a definition: alone in brackets after its expansion, as in
+    "graphics processing unit (GPU)"."""
+    for paragraph in body:
+        starts = paragraph.line_starts()
+        # Blanked rather than removed, so offsets still map to lines.
+        text = GAP_MARKER_SPAN.sub(lambda m: " " * len(m.group(0)), paragraph.text)
+        for match in CAPITALISED_TERM.finditer(text):
+            term = match.group("term")
+            if term in EXEMPT_ABBREVIATIONS or ROMAN_NUMERAL.fullmatch(term):
+                continue
+            line = paragraph.lines[bisect_right(starts, match.start("term")) - 1]
+            is_definition = bool(match.group("open") and match.group("close"))
+            yield term, line.number, is_definition
+
+
+def _abbreviation_issues(body: list[Paragraph]) -> list[Issue]:
+    first_use: dict[str, int] = {}
+    defined_on: dict[str, int] = {}
+    found: list[tuple[int, str]] = []
+    for term, line, is_definition in _abbreviations(body):
+        if not is_definition:
+            first_use.setdefault(term, line)
+        elif term in defined_on:
+            found.append(
+                (
+                    line,
+                    f"'{term}' is already defined on line {defined_on[term]}:"
+                    " use the abbreviation alone",
+                )
+            )
+        else:
+            defined_on[term] = line
+            if term in first_use:
+                found.append(
+                    (
+                        first_use[term],
+                        f"'{term}' is used before its definition on line {line}:"
+                        " define it at first use",
+                    )
+                )
+    found += [
+        (
+            line,
+            f"'{term}' is never defined: spell it out at first use, with the"
+            " abbreviation in brackets",
+        )
+        for term, line in first_use.items()
+        if term not in defined_on
+    ]
+    return [Issue(line, "abbreviation", WARN, message) for line, message in found]
+
+
 def find_issues(text: str, fmt: Format) -> list[Issue]:
     """All issues in a draft, ordered by line. Pure: reads nothing, writes nothing."""
     rules = (
@@ -471,6 +536,7 @@ def find_issues(text: str, fmt: Format) -> list[Issue]:
         for issue in _pattern_issues(paragraph, rules)
     ]
     issues += [issue for paragraph in body if (issue := _rhythm_issue(paragraph))]
+    issues += _abbreviation_issues(body)
     if document_issue := _document_rhythm_issue(body):
         issues.append(document_issue)
     return sorted(issues, key=lambda issue: issue.line)
