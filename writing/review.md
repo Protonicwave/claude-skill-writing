@@ -8,9 +8,9 @@ The writer of a draft reads what they meant, not what they wrote. The checker an
 |---|---|---|---|
 | Claim support | The draft cites sources and `verify.py --draft` reports no errors | The claim and quote pairs from the sources file | router-worker |
 | Cold reader | Reports, essays, explainers and applications over about 150 words; anything for a reader outside the field | The draft and a one-paragraph description of its reader | router-worker |
-| Examiner | A rubric, marking scheme or person specification is in the working folder or the request | The draft and the rubric | router-expert |
+| Examiner | A rubric, marking scheme or person specification for the draft is in the working folder or the request, whatever the register | The draft and the rubric | router-expert |
 
-Messages, lab book entries and posts skip all three unless the student asks: they are short, and the student knows the reader. Run the passes after the mechanical checks are clean and before delivery. They read different inputs and change nothing, so run them at once.
+Messages, lab book entries and posts skip claim support and the cold reader unless the student asks: they are short, and the student knows the reader. A lab book marked against a rubric still gets the examiner. Run the passes after the mechanical checks are clean and before delivery. They read different inputs and change nothing, so run them at once.
 
 ## The briefs
 
