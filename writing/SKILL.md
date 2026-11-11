@@ -21,6 +21,8 @@ Read the matching file in `registers/` before drafting. Choose from the request 
 | Lay summary, outreach piece, explainer for a reader outside physics or computing | `registers/explainer.md` |
 | Email, Teams or Slack post, message to a supervisor, teammate or client | `registers/message.md` |
 
+When the request names a tone ("warmer", "more formal", "less blunt", "shorter", "more confident"), read `voice.md` as well. Tone is five dials set on top of the register, and no tone changes a fact, a request or a hedge's size.
+
 ## Before drafting
 
 1. **Find the local rules.** A rubric, module handbook, template, word limit or supervisor's instruction outranks this skill. If the working folder holds one, read it first. The PHC903 report rubric, for example, rewards "publishable quality" and "full compliance with journal style", which settles the register.
@@ -78,6 +80,7 @@ When asked to rewrite, tighten or "make it sound more human", keep the student's
 - `sources.md`: finding sources on a budget, verifying them, gap markers, the verification log, citation styles.
 - `exemplars.md`: short passages from admired human writers and what each one does.
 - `review.md`: the fresh-context passes for claim support, a cold reader and an examiner.
+- `voice.md`: tone on request as five dials, their defaults for each register, and what no tone may change.
 - `registers/`: one file per kind of writing.
 - `scripts/check.py`: the draft checker.
 - `scripts/verify.py`: checks references and quoted passages against the registries.
