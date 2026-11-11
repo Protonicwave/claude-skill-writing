@@ -124,6 +124,7 @@ def test_load_cases_reads_checks_and_input_text(tmp_path: Path) -> None:
         ([case(files=["files/absent.md"])], "absent.md"),
         ([case(checks=[{"kind": "max_words"}])], "limit"),
         ([case(expectations="one")], "expectations"),
+        ([case(expected_output=None)], "expected_output"),
         ([case(id="1")], "id"),
     ],
 )
@@ -132,6 +133,13 @@ def test_load_cases_rejects_malformed_cases(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         load_cases(write_evals(tmp_path, cases))
+
+
+def test_load_cases_requires_the_skill_name(tmp_path: Path) -> None:
+    path = write_evals(tmp_path, [case()])
+    path.write_text(json.dumps({"evals": [case()]}), encoding="utf-8")
+    with pytest.raises(ValueError, match="skill_name"):
+        load_cases(path)
 
 
 def make_run(tmp_path: Path, deliverable: str | None) -> Path:
