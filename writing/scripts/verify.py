@@ -1699,6 +1699,12 @@ _NUMBER = re.compile(r"\d+(?:,\d{3}(?!\d))*(?:\.\d+)?")
 class Severity(StrEnum):
     ERROR = "error"
     WARNING = "warning"
+    NOTE = "note"
+
+
+class FindingKind(StrEnum):
+    CITE = "cite"
+    NUMBER = "number"
     MARKER = "marker"
 
 
@@ -1706,6 +1712,7 @@ class Severity(StrEnum):
 class AuditFinding:
     line: int
     severity: Severity
+    kind: FindingKind
     text: str
 
 
@@ -1774,7 +1781,9 @@ def audit_draft(
         if ALL_SOURCES_KEY not in cited:
             uncited = tuple(key for key in by_key if key not in cited)
     findings += (
-        AuditFinding(line_of(m.start()), Severity.MARKER, _squash(m.group()))
+        AuditFinding(
+            line_of(m.start()), Severity.NOTE, FindingKind.MARKER, _squash(m.group())
+        )
         for m in markers
     )
     ordered = sorted(dict.fromkeys(findings), key=lambda finding: finding.line)
@@ -1844,7 +1853,10 @@ def _key_finding(
         return None
     if key not in by_key:
         return AuditFinding(
-            line, Severity.ERROR, f"`{key}` is cited but not in the sources"
+            line,
+            Severity.ERROR,
+            FindingKind.CITE,
+            f"`{key}` is cited but not in the sources",
         )
     status = statuses[key]
     if status is Status.VERIFIED:
@@ -1852,7 +1864,8 @@ def _key_finding(
     severity = (
         Severity.WARNING if status is Status.CLAIM_NOT_CHECKED else Severity.ERROR
     )
-    return AuditFinding(line, severity, f"`{key}` is cited but {status.value}")
+    text = f"`{key}` is cited but {status.value}"
+    return AuditFinding(line, severity, FindingKind.CITE, text)
 
 
 def _numbers(text: str) -> list[str]:
@@ -1892,6 +1905,7 @@ def _number_findings(
             AuditFinding(
                 line_of(offset),
                 Severity.WARNING,
+                FindingKind.NUMBER,
                 f"{number} appears in no quote from {names}",
             )
             for offset, number in _prose_numbers(text, begin, end, inside)
@@ -1960,7 +1974,7 @@ def render_audit(audit: DraftAudit) -> str:
 
 
 def _bullet(finding: AuditFinding) -> str:
-    if finding.severity is Severity.MARKER:
+    if finding.kind is FindingKind.MARKER:
         return f"- line {finding.line}: open marker {finding.text}"
     return f"- line {finding.line}: {finding.severity.value}: {finding.text}"
 
@@ -1969,10 +1983,11 @@ def _audit_counts(audit: DraftAudit) -> str:
     def count(severity: Severity) -> int:
         return sum(1 for finding in audit.findings if finding.severity is severity)
 
+    markers = sum(1 for finding in audit.findings if finding.kind is FindingKind.MARKER)
     parts = [
         _counted(count(Severity.ERROR), "error"),
         _counted(count(Severity.WARNING), "warning"),
-        _counted(count(Severity.MARKER), "open marker"),
+        _counted(markers, "open marker"),
         _counted(len(audit.uncited), "uncited source"),
     ]
     return f"Draft audit: {', '.join(parts)}."

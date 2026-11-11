@@ -26,6 +26,7 @@ from verify import (
     CitedSource,
     DraftAudit,
     Fetch,
+    FindingKind,
     Outcome,
     RegistryClient,
     RegistryUnavailableError,
@@ -2429,10 +2430,10 @@ def test_audit_reports_each_open_gap_marker_with_its_line_and_text() -> None:
         "x [NOTE: not a marker]"
     )
     assert found(audited(draft)) == [
-        (1, "marker", "[DATA NEEDED: laser power at 300 K]"),
-        (2, "marker", "[CITATION NEEDED: who said this]"),
-        (3, "marker", "[UNVERIFIED: a claim]"),
-        (4, "marker", "[CLAIM NOT CHECKED: another]"),
+        (1, "note", "[DATA NEEDED: laser power at 300 K]"),
+        (2, "note", "[CITATION NEEDED: who said this]"),
+        (3, "note", "[UNVERIFIED: a claim]"),
+        (4, "note", "[CLAIM NOT CHECKED: another]"),
     ]
 
 
@@ -2447,9 +2448,19 @@ def test_audit_reads_a_marker_without_a_colon_or_in_lower_case(marker: str) -> N
     assert [f.text for f in audited(marker).findings] == [marker]
 
 
+def test_audit_labels_each_finding_with_its_kind() -> None:
+    draft = "See [@gone].\nIt was 46.1 percent [@a].\n[DATA NEEDED: x]"
+    audit = audited(draft)
+    assert [(f.kind, f.severity) for f in audit.findings] == [
+        (FindingKind.CITE, Severity.ERROR),
+        (FindingKind.NUMBER, Severity.WARNING),
+        (FindingKind.MARKER, Severity.NOTE),
+    ]
+
+
 def test_audit_does_not_check_numbers_inside_a_marker() -> None:
     audit = audited("It rose [DATA NEEDED: value at 300 K] [@a].")
-    assert [f.severity for f in audit.findings] == [Severity.MARKER]
+    assert [f.kind for f in audit.findings] == [FindingKind.MARKER]
 
 
 def test_audit_treats_nocite_star_as_citing_every_source() -> None:
@@ -2474,7 +2485,7 @@ def test_audit_of_plain_text_lists_markers_only() -> None:
     audit = audited("No cites, 46.1 percent. [DATA NEEDED: x]")
     assert not audit.has_cites
     assert audit.uncited == ()
-    assert found(audit) == [(1, "marker", "[DATA NEEDED: x]")]
+    assert found(audit) == [(1, "note", "[DATA NEEDED: x]")]
 
 
 def test_audit_reports_a_key_cited_twice_on_one_line_once() -> None:
