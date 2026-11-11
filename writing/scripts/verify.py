@@ -7,6 +7,8 @@ Usage:
                               ignore cached responses and fetch again
     verify.py --bib <references.bib> <sources.jsonl>
                               also write a BibTeX file of the verified sources
+    verify.py --draft <draft.md> <sources.jsonl>
+                              also audit the draft's citations and numbers
 
 Each line of the input is one source as the draft cites it:
 
@@ -34,12 +36,20 @@ input cannot be read or is invalid, and 3 if the run stops on a fault.
 the cited fields, so no reference is typed from memory. The file is written
 after the checks, also when the run stops on a fault, and a path whose folder
 does not exist exits 2 before any request. A write failure exits 3.
+
+`--draft` reads a LaTeX or Markdown draft (UTF-8) and, after the log, prints a
+Markdown audit: each cited key that is not in the sources or not VERIFIED,
+each number in a cited sentence that no quote from the cited sources holds,
+each open gap marker, and each source never cited. An audit error turns exit
+0 into 1. A draft that cannot be read exits 2 before any request, and no
+audit is printed when the run stops on a fault.
 """
 
 from __future__ import annotations
 
 import argparse
 import base64
+import bisect
 import contextlib
 import http.client
 import io
@@ -1588,6 +1598,267 @@ def bib_report(
     return f"{line}; left out: {', '.join(left_out)}" if left_out else line
 
 
+# Draft audit
+
+
+MAX_UNCHECKED_INTEGER = 10
+NO_CITES_NOTICE = (
+    r"no LaTeX \cite or Pandoc [@key] citations found, "
+    "so keys and numbers were not checked"
+)
+
+_LATEX_CITE = re.compile(
+    r"\\[A-Za-z]*[Cc]ite[A-Za-z]*\*?(?:\s*\[[^\[\]]*\]){0,2}\s*\{([^{}]*)\}"
+)
+_PANDOC_BRACKET = re.compile(r"\[([^\[\]]*)\]")
+_PANDOC_KEY = re.compile(r"(?<!\w)-?@(\w(?:\w|[:.#$%&+?<>~/-](?=\w))*)")
+_MARKER = re.compile(
+    r"\[(?:DATA NEEDED|CITATION NEEDED|UNVERIFIED|CLAIM NOT CHECKED):[^\[\]]*\]"
+)
+_SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+(?=[A-Z\\])")
+_THOUSANDS_COMMA = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
+_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+
+
+class Severity(StrEnum):
+    ERROR = "error"
+    WARNING = "warning"
+    MARKER = "marker"
+
+
+@dataclass(frozen=True, slots=True)
+class AuditFinding:
+    line: int
+    severity: Severity
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class DraftAudit:
+    has_cites: bool
+    findings: tuple[AuditFinding, ...]
+    uncited: tuple[str, ...]
+
+    @property
+    def has_errors(self) -> bool:
+        return any(f.severity is Severity.ERROR for f in self.findings)
+
+
+@dataclass(frozen=True, slots=True)
+class _Span:
+    """A stretch of the draft that is not prose: a cite or a gap marker."""
+
+    start: int
+    end: int
+    keys: tuple[str, ...]
+
+
+class _Lines:
+    def __init__(self, text: str) -> None:
+        self._breaks = [match.start() for match in re.finditer("\n", text)]
+
+    def number(self, offset: int) -> int:
+        return bisect.bisect_left(self._breaks, offset) + 1
+
+
+def audit_draft(
+    text: str,
+    sources: Sequence[CitedSource],
+    verifications: Sequence[Verification],
+) -> DraftAudit:
+    """Check a draft's cites, numbers and gap markers against the verified sources."""
+    lines = _Lines(text)
+    cites = _cite_spans(text)
+    markers = list(_MARKER.finditer(text))
+    spans = sorted(
+        [*cites, *(_Span(m.start(), m.end(), ()) for m in markers)],
+        key=lambda span: span.start,
+    )
+    by_key = {source.key: source for source in sources}
+    findings: list[AuditFinding] = []
+    uncited: tuple[str, ...] = ()
+    if cites:
+        statuses = {v.source.key: v.status for v in verifications}
+        findings += _cite_findings(cites, lines, by_key, statuses)
+        findings += _number_findings(text, spans, by_key, lines)
+        cited = {key for span in cites for key in span.keys}
+        uncited = tuple(key for key in by_key if key not in cited)
+    findings += (
+        AuditFinding(lines.number(m.start()), Severity.MARKER, _squash(m.group()))
+        for m in markers
+    )
+    ordered = sorted(dict.fromkeys(findings), key=lambda finding: finding.line)
+    return DraftAudit(bool(cites), tuple(ordered), uncited)
+
+
+def _squash(text: str) -> str:
+    return _WHITESPACE.sub(" ", text)
+
+
+def _cite_spans(text: str) -> list[_Span]:
+    spans = [
+        _Span(match.start(), match.end(), _split_keys(match.group(1)))
+        for match in _LATEX_CITE.finditer(text)
+    ]
+    for bracket in _PANDOC_BRACKET.finditer(text):
+        keys = tuple(_PANDOC_KEY.findall(bracket.group(1)))
+        spans.append(_Span(bracket.start(), bracket.end(), keys))
+    return sorted((span for span in spans if span.keys), key=lambda span: span.start)
+
+
+def _split_keys(keys: str) -> tuple[str, ...]:
+    return tuple(key for part in keys.split(",") if (key := part.strip()))
+
+
+def _cite_findings(
+    cites: Sequence[_Span],
+    lines: _Lines,
+    by_key: dict[str, CitedSource],
+    statuses: dict[str, Status],
+) -> list[AuditFinding]:
+    found = (
+        _key_finding(lines.number(span.start), key, by_key, statuses)
+        for span in cites
+        for key in span.keys
+    )
+    return [finding for finding in found if finding is not None]
+
+
+def _key_finding(
+    line: int,
+    key: str,
+    by_key: dict[str, CitedSource],
+    statuses: dict[str, Status],
+) -> AuditFinding | None:
+    if key not in by_key:
+        return AuditFinding(
+            line, Severity.ERROR, f"`{key}` is cited but not in the sources"
+        )
+    status = statuses.get(key)
+    if status is None or status is Status.VERIFIED:
+        return None
+    severity = (
+        Severity.WARNING if status is Status.CLAIM_NOT_CHECKED else Severity.ERROR
+    )
+    return AuditFinding(line, severity, f"`{key}` is cited but {status.value}")
+
+
+def _numbers(text: str) -> list[str]:
+    return _NUMBER.findall(_THOUSANDS_COMMA.sub("", text))
+
+
+def _number_findings(
+    text: str,
+    spans: Sequence[_Span],
+    by_key: dict[str, CitedSource],
+    lines: _Lines,
+) -> list[AuditFinding]:
+    quoted = {
+        key: {n for evidence in source.evidence for n in _numbers(evidence.quote)}
+        for key, source in by_key.items()
+    }
+    starts = [span.start for span in spans]
+    findings: list[AuditFinding] = []
+    for begin, end in _sentence_bounds(_mask(text, spans)):
+        first = bisect.bisect_left(starts, begin)
+        inside = spans[first : bisect.bisect_left(starts, end)]
+        keys = list(dict.fromkeys(k for s in inside for k in s.keys if k in by_key))
+        if not keys:
+            continue
+        supported = set().union(*(quoted[key] for key in keys))
+        years = {str(by_key[key].year) for key in keys}
+        names = ", ".join(f"`{key}`" for key in keys)
+        line = lines.number(begin)
+        findings += (
+            AuditFinding(
+                line, Severity.WARNING, f"{n} appears in no quote from {names}"
+            )
+            for n in _numbers(_prose(text, begin, end, inside))
+            if _needs_quote(n, years) and n not in supported
+        )
+    return findings
+
+
+def _needs_quote(number: str, years: set[str]) -> bool:
+    # float, not int: a string of thousands of digits overflows to inf
+    # rather than raising.
+    if number in years:
+        return False
+    return "." in number or float(number) > MAX_UNCHECKED_INTEGER
+
+
+def _mask(text: str, spans: Sequence[_Span]) -> str:
+    """The text with each span's body replaced by underscores, length kept.
+
+    The first character stays, so a cite that opens a sentence still starts one.
+    """
+    pieces: list[str] = []
+    position = 0
+    for span in spans:
+        if span.end <= position:
+            continue
+        begin = max(span.start, position)
+        pieces += [text[position:begin], text[begin], "_" * (span.end - begin - 1)]
+        position = span.end
+    pieces.append(text[position:])
+    return "".join(pieces)
+
+
+def _sentence_bounds(masked: str) -> list[tuple[int, int]]:
+    bounds: list[tuple[int, int]] = []
+    begin = 0
+    for gap in [*_SENTENCE_BREAK.finditer(masked), None]:
+        end = len(masked) if gap is None else gap.start()
+        sentence = masked[begin:end]
+        bounds.append((begin + len(sentence) - len(sentence.lstrip()), end))
+        begin = end if gap is None else gap.end()
+    return bounds
+
+
+def _prose(text: str, begin: int, end: int, spans: Sequence[_Span]) -> str:
+    pieces: list[str] = []
+    position = begin
+    for span in spans:
+        if span.end <= position:
+            continue
+        pieces.append(text[position : max(span.start, position)])
+        position = span.end
+    pieces.append(text[position:end])
+    return " ".join(pieces)
+
+
+def render_audit(audit: DraftAudit) -> str:
+    """The audit as Markdown: a bullet per finding, then a count line."""
+    bullets = [_bullet(finding) for finding in audit.findings]
+    bullets += (f"- `{key}` is in the sources but never cited" for key in audit.uncited)
+    notice = "" if audit.has_cites else f"{NO_CITES_NOTICE}\n\n"
+    body = "\n".join(bullets) if bullets else "Nothing to report."
+    return f"\n## Draft audit\n\n{notice}{body}\n\n{_audit_counts(audit)}"
+
+
+def _bullet(finding: AuditFinding) -> str:
+    if finding.severity is Severity.MARKER:
+        return f"- line {finding.line}: open marker {finding.text}"
+    return f"- line {finding.line}: {finding.severity.value}: {finding.text}"
+
+
+def _audit_counts(audit: DraftAudit) -> str:
+    def count(severity: Severity) -> int:
+        return sum(1 for finding in audit.findings if finding.severity is severity)
+
+    parts = [
+        _counted(count(Severity.ERROR), "error"),
+        _counted(count(Severity.WARNING), "warning"),
+        _counted(count(Severity.MARKER), "open marker"),
+        _counted(len(audit.uncited), "uncited source"),
+    ]
+    return f"Draft audit: {', '.join(parts)}."
+
+
+def _counted(number: int, noun: str) -> str:
+    return f"{number} {noun}" if number == 1 else f"{number} {noun}s"
+
+
 # Command line
 
 
@@ -1621,9 +1892,20 @@ def _read_input(path: str) -> tuple[str, Path]:
         with Path(path).open(encoding="utf-8") as handle:
             text = handle.read(MAX_INPUT_CHARACTERS + 1)
         base_dir = Path(path).resolve().parent
+    _require_within_limit(text)
+    return text, base_dir
+
+
+def _require_within_limit(text: str) -> None:
     if len(text) > MAX_INPUT_CHARACTERS:
         raise ValueError(f"input is over {MAX_INPUT_CHARACTERS} characters")
-    return text, base_dir
+
+
+def _read_draft(path: Path) -> str:
+    with path.open(encoding="utf-8") as handle:
+        text = handle.read(MAX_INPUT_CHARACTERS + 1)
+    _require_within_limit(text)
+    return text
 
 
 def _cache_path(sources: str) -> Path:
@@ -1677,6 +1959,12 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         metavar="PATH",
         help="write a BibTeX file of the sources whose cited fields all matched",
     )
+    parser.add_argument(
+        "--draft",
+        type=Path,
+        metavar="PATH",
+        help="audit the citations, numbers and gap markers of a draft",
+    )
     return parser.parse_args(argv)
 
 
@@ -1697,12 +1985,32 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError) as err:
         print(f"cannot verify {args.sources}: {err}", file=sys.stderr)
         return 2
+    try:
+        draft = None if args.draft is None else _read_draft(args.draft)
+    except (OSError, ValueError) as err:
+        print(f"cannot audit {args.draft}: {err}", file=sys.stderr)
+        return 2
 
     verifications: list[Verification] = []
     code = _run_checks(sources, args, verifications)
+    code = _audited_code(draft, sources, verifications, code)
     if args.bib is not None and not _write_bib(sources, verifications, args.bib):
         return 3
     return code
+
+
+def _audited_code(
+    draft: str | None,
+    sources: Sequence[CitedSource],
+    verifications: Sequence[Verification],
+    code: int,
+) -> int:
+    """Print the draft audit, and return the exit code it leaves."""
+    if draft is None or code not in (0, 1):
+        return code
+    audit = audit_draft(draft, sources, verifications)
+    print(render_audit(audit))
+    return 1 if audit.has_errors else code
 
 
 def _run_checks(

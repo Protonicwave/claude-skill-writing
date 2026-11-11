@@ -22,18 +22,22 @@ from verify import (
     MAX_CACHED_BODY_BYTES,
     ArxivId,
     CitedSource,
+    DraftAudit,
     Fetch,
     Outcome,
     RegistryClient,
     RegistryUnavailableError,
     ResponseCache,
+    Severity,
     Status,
     Verification,
+    audit_draft,
     log_row,
     log_summary,
     main,
     parse_identifier,
     parse_sources,
+    render_audit,
     render_bib,
     verify,
 )
@@ -2004,3 +2008,401 @@ def test_main_bib_write_failure_prints_one_line_and_exits_3(
     assert len(lines) == 1
     assert lines[0].startswith(f"cannot write {bib}")
     assert bib.read_text(encoding="utf-8") == "kept"
+
+
+# Draft audit
+
+
+YIELD_QUOTE = "The measured yield was 45.2 percent across all samples."
+
+
+def verification_for(
+    source: CitedSource, status: Status = Status.VERIFIED
+) -> Verification:
+    return Verification(
+        source=source,
+        status=status,
+        query_url="",
+        reason="",
+        venue="",
+        version="",
+        fields=(),
+        claims=(),
+        notices=(),
+        retraction_checked="",
+        open_text=None,
+        bib=None,
+    )
+
+
+def source_entry(
+    key: str, *, year: int = 2019, quote: str = YIELD_QUOTE
+) -> dict[str, object]:
+    return entry(
+        key=key,
+        id=f"10.1000/{key}",
+        year=year,
+        evidence=[{"claim": "x", "quote": quote}],
+    )
+
+
+def audited(
+    draft: str,
+    *entries: dict[str, object],
+    statuses: dict[str, Status] | None = None,
+) -> DraftAudit:
+    cited = sources(*(entries or (source_entry("a"),)))
+    given = statuses or {}
+    checks = [verification_for(s, given.get(s.key, Status.VERIFIED)) for s in cited]
+    return audit_draft(draft, cited, checks)
+
+
+def found(audit: DraftAudit) -> list[tuple[int, str, str]]:
+    return [(f.line, f.severity.value, f.text) for f in audit.findings]
+
+
+def missing_keys_in(draft: str) -> list[str]:
+    """The keys the audit read from a draft, seen as missing from the sources."""
+    audit = audited(draft, source_entry("zzz"))
+    return [
+        f.text.split("`")[1] for f in audit.findings if f.severity is Severity.ERROR
+    ]
+
+
+def test_audit_reports_a_cited_key_missing_from_the_sources() -> None:
+    audit = audited("Intro.\nSee \\cite{jones2020}.")
+    assert found(audit) == [(2, "error", "`jones2020` is cited but not in the sources")]
+
+
+@pytest.mark.parametrize(
+    "status", [Status.MISMATCH, Status.UNVERIFIED, Status.RETRACTED]
+)
+def test_audit_reports_a_cited_key_that_is_not_verified_as_an_error(
+    status: Status,
+) -> None:
+    audit = audited("See \\cite{a}.", statuses={"a": status})
+    assert found(audit) == [(1, "error", f"`a` is cited but {status.value}")]
+    assert audit.has_errors
+
+
+def test_audit_warns_when_a_cited_claim_was_not_checked() -> None:
+    audit = audited("See \\cite{a}.", statuses={"a": Status.CLAIM_NOT_CHECKED})
+    assert found(audit) == [(1, "warning", "`a` is cited but CLAIM NOT CHECKED")]
+    assert not audit.has_errors
+
+
+def test_audit_has_nothing_to_say_about_a_verified_cited_key() -> None:
+    audit = audited("See \\cite{a}.")
+    assert found(audit) == []
+    assert audit.uncited == ()
+
+
+@pytest.mark.parametrize(
+    ("draft", "keys"),
+    [
+        (r"\cite{a}", ["a"]),
+        (r"\citep{a,b}", ["a", "b"]),
+        (r"\citet{a, b}", ["a", "b"]),
+        (r"\citep[see][p.~4]{a,b}", ["a", "b"]),
+        (r"\cite[p. 4]{a}", ["a"]),
+        (r"\citep*{a}", ["a"]),
+        (r"\citealt{a}", ["a"]),
+        (r"\citeauthor{a}", ["a"]),
+        (r"\parencite{a}", ["a"]),
+        (r"\textcite{a}", ["a"]),
+        (r"\autocite{a}", ["a"]),
+        (r"\footcite{a}", ["a"]),
+        (r"\Cite{a}", ["a"]),
+        ("[@a]", ["a"]),
+        ("[@a; @b, p. 4]", ["a", "b"]),
+        ("[-@a]", ["a"]),
+        ("[see @a, ch. 2]", ["a"]),
+        ("see [@smith:2020] here", ["smith:2020"]),
+        ("see [@a-b.c]. Next", ["a-b.c"]),
+        ("see [@a.]", ["a"]),
+    ],
+)
+def test_audit_reads_each_latex_and_pandoc_cite_form(
+    draft: str, keys: list[str]
+) -> None:
+    assert missing_keys_in(draft) == keys
+
+
+def test_audit_does_not_take_an_email_address_or_mention_as_a_cite() -> None:
+    audit = audited("Write to me@example.org or @someone, not [me@example.org].")
+    assert not audit.has_cites
+    assert found(audit) == []
+
+
+def test_audit_reports_a_number_found_in_no_quote_of_the_cited_source() -> None:
+    audit = audited("Intro.\nThe yield was\n46.1 percent [@a].")
+    assert found(audit) == [(2, "warning", "46.1 appears in no quote from `a`")]
+
+
+def test_audit_accepts_a_number_found_in_a_quote_of_the_cited_source() -> None:
+    assert found(audited("The yield was 45.2 percent [@a].")) == []
+
+
+def test_audit_checks_a_number_against_the_quotes_of_every_cited_source() -> None:
+    other = source_entry("b", quote="Another run gave a yield of 46.1 percent.")
+    draft = "It was 45.2 or 46.1 [@a; @b]. It was 47 \\cite{a,b}."
+    audit = audited(draft, source_entry("a"), other)
+    assert found(audit) == [(1, "warning", "47 appears in no quote from `a`, `b`")]
+
+
+@pytest.mark.parametrize(
+    ("sentence", "flagged"),
+    [
+        ("There were 10 samples [@a].", []),
+        ("There were 3 samples [@a].", []),
+        ("There were 11 samples [@a].", ["11"]),
+        ("There were 2.5 samples [@a].", ["2.5"]),
+        ("It was published in 2019 [@a].", []),
+        ("It was published in 2020 [@a].", ["2020"]),
+        ("See [@a, p. 4567].", []),
+        ("See \\citep[p.~4567]{a}.", []),
+        ("The 2019 and 2020 runs [@a].", ["2020"]),
+        ("There were 007 samples [@a].", []),
+        (f"There were {'9' * 5000} samples [@a].", ["9" * 5000]),
+    ],
+)
+def test_audit_skips_small_integers_years_and_page_locators(
+    sentence: str, flagged: list[str]
+) -> None:
+    numbers = [f.text.split()[0] for f in audited(sentence).findings]
+    assert numbers == flagged
+
+
+@pytest.mark.parametrize(
+    ("sentence", "quote"),
+    [
+        ("There were 12,000 samples [@a].", "There were 12000 samples in total."),
+        ("There were 12000 samples [@a].", "There were 12,000 samples in total."),
+        ("There were 1,234,567 samples [@a].", "There were 1234567 samples in all."),
+    ],
+)
+def test_audit_compares_numbers_without_thousands_commas(
+    sentence: str, quote: str
+) -> None:
+    assert found(audited(sentence, source_entry("a", quote=quote))) == []
+
+
+def test_audit_does_not_check_numbers_in_a_sentence_with_no_cite() -> None:
+    audit = audited("The yield was 46.1 percent. It is cited [@a].")
+    assert found(audit) == []
+
+
+def test_audit_skips_numbers_when_the_only_cited_key_is_missing() -> None:
+    audit = audited("The yield was 46.1 percent [@zzz].")
+    assert found(audit) == [(1, "error", "`zzz` is cited but not in the sources")]
+
+
+def test_audit_keeps_a_cite_option_with_a_full_stop_inside_one_sentence() -> None:
+    audit = audited("The yield was 46.1 percent \\citep[see Smith. Ch. 2]{a}.")
+    assert found(audit) == [(1, "warning", "46.1 appears in no quote from `a`")]
+
+
+def test_audit_starts_a_new_sentence_at_a_capital_or_a_backslash() -> None:
+    draft = "It was 46.1 percent. \\citep{a} Next was 46.2 percent [@a]."
+    assert found(audited(draft)) == [
+        (1, "warning", "46.2 appears in no quote from `a`")
+    ]
+
+
+def test_audit_reports_each_open_gap_marker_with_its_line_and_text() -> None:
+    draft = (
+        "[DATA NEEDED: laser power at 300 K]\n"
+        "x [CITATION NEEDED: who said this]\n"
+        "x [UNVERIFIED: a claim]\n"
+        "x [CLAIM NOT CHECKED: another]\n"
+        "x [NOTE: not a marker]"
+    )
+    assert found(audited(draft)) == [
+        (1, "marker", "[DATA NEEDED: laser power at 300 K]"),
+        (2, "marker", "[CITATION NEEDED: who said this]"),
+        (3, "marker", "[UNVERIFIED: a claim]"),
+        (4, "marker", "[CLAIM NOT CHECKED: another]"),
+    ]
+
+
+def test_audit_does_not_check_numbers_inside_a_marker() -> None:
+    audit = audited("It rose [DATA NEEDED: value at 300 K] [@a].")
+    assert [f.severity for f in audit.findings] == [Severity.MARKER]
+
+
+def test_audit_lists_a_source_that_is_never_cited() -> None:
+    audit = audited("See [@a].", source_entry("a"), source_entry("park2017"))
+    assert audit.uncited == ("park2017",)
+
+
+def test_audit_of_plain_text_lists_markers_only() -> None:
+    audit = audited("No cites, 46.1 percent. [DATA NEEDED: x]")
+    assert not audit.has_cites
+    assert audit.uncited == ()
+    assert found(audit) == [(1, "marker", "[DATA NEEDED: x]")]
+
+
+def test_audit_reports_a_key_cited_twice_on_one_line_once() -> None:
+    audit = audited("See \\cite{x} and [@x], also \\cite{x}.")
+    assert found(audit) == [(1, "error", "`x` is cited but not in the sources")]
+
+
+def test_audit_reports_a_key_cited_on_two_lines_twice() -> None:
+    audit = audited("See \\cite{x}.\nAnd \\cite{x}.")
+    assert [f.line for f in audit.findings] == [1, 2]
+
+
+def test_audit_orders_findings_by_line() -> None:
+    draft = "[DATA NEEDED: x]\nSee [@x].\nIt was 46.1 percent [@a]."
+    assert [f.line for f in audited(draft).findings] == [1, 2, 3]
+
+
+FULL_AUDIT = """
+## Draft audit
+
+- line 4: error: `jones2020` is cited but not in the sources
+- line 7: error: `lee2018` is cited but MISMATCH
+- line 9: warning: `kim2021` is cited but CLAIM NOT CHECKED
+- line 12: warning: 45.2 appears in no quote from `smith2019`
+- line 15: open marker [DATA NEEDED: laser power at 300 K]
+- `park2017` is in the sources but never cited
+
+Draft audit: 2 errors, 2 warnings, 1 open marker, 1 uncited source."""
+
+
+def test_render_audit_has_the_documented_shape() -> None:
+    lines = [""] * 16
+    lines[3] = "X [@jones2020]."
+    lines[6] = "X [@lee2018]."
+    lines[8] = "X [@kim2021]."
+    lines[11] = "It was 45.2 percent [@smith2019]."
+    lines[14] = "[DATA NEEDED: laser power at 300 K]"
+    entries = [
+        source_entry(key, quote="Another quote with no numbers in it.")
+        for key in ("smith2019", "lee2018", "kim2021", "park2017")
+    ]
+    statuses = {"lee2018": Status.MISMATCH, "kim2021": Status.CLAIM_NOT_CHECKED}
+    audit = audited("\n".join(lines), *entries, statuses=statuses)
+    assert render_audit(audit) == FULL_AUDIT
+
+
+def test_render_audit_says_nothing_to_report_and_counts_zeros() -> None:
+    assert render_audit(audited("See [@a].")) == (
+        "\n## Draft audit\n\nNothing to report.\n\n"
+        "Draft audit: 0 errors, 0 warnings, 0 open markers, 0 uncited sources."
+    )
+
+
+def test_render_audit_uses_singulars_for_one_of_each() -> None:
+    audit = audited("[DATA NEEDED: x] [@x] [@a]", source_entry("a"), source_entry("b"))
+    assert render_audit(audit).splitlines()[-1] == (
+        "Draft audit: 1 error, 0 warnings, 1 open marker, 1 uncited source."
+    )
+
+
+def test_render_audit_of_plain_text_says_nothing_was_checked() -> None:
+    text = render_audit(audited("Plain words. [DATA NEEDED: x]"))
+    assert text.splitlines()[3] == (
+        r"no LaTeX \cite or Pandoc [@key] citations found, "
+        "so keys and numbers were not checked"
+    )
+    assert "- line 1: open marker [DATA NEEDED: x]" in text
+    assert text.endswith("0 errors, 0 warnings, 1 open marker, 0 uncited sources.")
+
+
+def draft_argv(tmp_path: Path, draft: str) -> list[str]:
+    (tmp_path / "refs.jsonl").write_text(json.dumps(entry()), encoding="utf-8")
+    (tmp_path / "draft.md").write_text(draft, encoding="utf-8")
+    return [str(tmp_path / "refs.jsonl"), "--draft", str(tmp_path / "draft.md")]
+
+
+def test_main_prints_the_audit_after_the_summary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    argv = draft_argv(tmp_path, "See [@Feynman1982].\n[DATA NEEDED: x]\n")
+    assert run_main_with(doi_registry(), monkeypatch, argv) == 0
+    out = capsys.readouterr().out
+    assert out.index("1 of 1 sources verified.") < out.index("## Draft audit")
+    assert "- line 2: open marker [DATA NEEDED: x]" in out
+
+
+def test_main_exits_1_when_every_source_verifies_but_a_cited_key_is_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    argv = draft_argv(tmp_path, "See [@Feynman1982] and [@jones2020].")
+    assert run_main_with(doi_registry(), monkeypatch, argv) == 1
+    assert "`jones2020` is cited but not in the sources" in capsys.readouterr().out
+
+
+def test_main_keeps_exit_0_for_warnings_markers_and_uncited_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    draft = "It was 46.1 percent [@Feynman1982]. [DATA NEEDED: x]"
+    argv = draft_argv(tmp_path, draft)
+    assert run_main_with(doi_registry(), monkeypatch, argv) == 0
+
+
+def test_main_keeps_exit_1_from_the_checks_when_the_audit_is_clean(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    argv = draft_argv(tmp_path, "See [@Feynman1982].")
+    (tmp_path / "refs.jsonl").write_text(json.dumps(entry(year=1990)), encoding="utf-8")
+    assert run_main_with(doi_registry(), monkeypatch, argv) == 1
+
+
+def test_main_prints_no_audit_without_a_draft(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (tmp_path / "refs.jsonl").write_text(json.dumps(entry()), encoding="utf-8")
+    argv = [str(tmp_path / "refs.jsonl")]
+    assert run_main_with(doi_registry(), monkeypatch, argv) == 0
+    assert "Draft audit" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("problem", ["missing", "not UTF-8", "too long"])
+def test_main_exits_2_on_a_draft_it_cannot_read_and_makes_no_request(
+    problem: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    argv = draft_argv(tmp_path, "")
+    draft = tmp_path / "draft.md"
+    if problem == "missing":
+        draft.unlink()
+    elif problem == "not UTF-8":
+        draft.write_bytes(b"caf\xe9 [@a]")
+    else:
+        draft.write_text("word " * 1000, encoding="utf-8")
+        monkeypatch.setattr(verify_module, "MAX_INPUT_CHARACTERS", 1000)
+    registry = doi_registry()
+    assert run_main_with(registry, monkeypatch, argv) == 2
+    assert registry.requested == []
+    captured = capsys.readouterr()
+    assert captured.err.startswith(f"cannot audit {draft}: ")
+    assert captured.out == ""
+
+
+def test_main_prints_no_audit_when_the_run_stops_on_a_fault(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    lines = [json.dumps(entry()), json.dumps(entry(key="Second", id="10.1000/second"))]
+    argv = draft_argv(tmp_path, "See [@jones2020].")
+    (tmp_path / "refs.jsonl").write_text("\n".join(lines), encoding="utf-8")
+    registry = FakeRegistry(
+        [
+            ("10.1000/second", RuntimeError("bug")),
+            ("api.crossref.org", crossref()),
+            ("api.openalex.org", openalex()),
+        ]
+    )
+    assert run_main_with(registry, monkeypatch, argv) == 3
+    assert "Draft audit" not in capsys.readouterr().out
