@@ -3,6 +3,8 @@
 Usage:
     verify.py <sources.jsonl>
     verify.py -               read the sources from standard input
+    verify.py --refresh <sources.jsonl>
+                              ignore cached responses and fetch again
 
 Each line of the input is one source as the draft cites it:
 
@@ -20,17 +22,22 @@ copy of the full text: plain text or HTML, inside the input file's folder
 (the current folder for standard input).
 
 Prints the verification log as a Markdown table, a row as each source is
-checked. Exits 0 if every source is verified, 1 if any is not, 2 if the
+checked. Registry responses are kept for 24 hours in `<sources stem>.cache.json`
+beside the input file, so a rerun makes no repeat requests; standard input
+keeps no cache. Exits 0 if every source is verified, 1 if any is not, 2 if the
 input cannot be read or is invalid, and 3 if the run stops on a fault.
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
+import contextlib
 import http.client
 import io
 import json
 import math
+import os
 import re
 import sys
 import time
@@ -68,6 +75,10 @@ ARXIV_INTERVAL_SECONDS = 3.0
 EARLIEST_YEAR = 1600
 YEAR_DIGITS = 4
 USER_AGENT = "writing-skill-verify/0.1"
+CACHE_LIFETIME_SECONDS = 24 * 60 * 60
+MAX_CACHED_BODY_BYTES = 1_000_000
+MAX_CACHE_FILE_BYTES = 64 * 1024 * 1024
+CACHE_FORMAT = "writing-verify-cache/1"
 
 CROSSREF_WORKS = "https://api.crossref.org/works/"
 DATACITE_DOIS = "https://api.datacite.org/dois/"
@@ -502,6 +513,124 @@ def _retry_wait(retry_after: str | None, attempt: int) -> float:
     if retry_after is not None and retry_after.strip().isdigit():
         return min(float(retry_after), MAX_RETRY_WAIT_SECONDS)
     return min(BACKOFF_BASE_SECONDS**attempt, MAX_RETRY_WAIT_SECONDS)
+
+
+@dataclass(frozen=True, slots=True)
+class _CachedResponse:
+    fetched: float
+    body: bytes | None
+
+
+class ResponseCache:
+    """A Fetch that keeps the inner fetch's answers for CACHE_LIFETIME_SECONDS.
+
+    Bodies up to MAX_CACHED_BODY_BYTES and 404s are kept. Failures propagate
+    and are not recorded. With `refresh`, stored answers are ignored but new
+    ones are still stored. A cache file that cannot be used is reported on
+    standard error and replaced by `save`. `now` is wall-clock seconds, since
+    entries outlive the process.
+    """
+
+    def __init__(
+        self,
+        fetch: Fetch,
+        path: Path,
+        now: Callable[[], float] = time.time,
+        *,
+        refresh: bool = False,
+    ) -> None:
+        self._fetch = fetch
+        self._path = path
+        self._now = now
+        self._refresh = refresh
+        self._entries = self._load()
+
+    def __call__(self, url: str) -> bytes | None:
+        stored = self._entries.get(url)
+        if stored is not None and not self._refresh and self._is_fresh(stored):
+            return stored.body
+        body = self._fetch(url)
+        if body is None or len(body) <= MAX_CACHED_BODY_BYTES:
+            self._entries[url] = _CachedResponse(self._now(), body)
+        else:
+            self._entries.pop(url, None)
+        return body
+
+    def save(self) -> None:
+        """Write the unexpired entries atomically; a failure is only reported."""
+        entries = {
+            url: {"fetched": response.fetched, "body": _encode_body(response.body)}
+            for url, response in self._entries.items()
+            if self._is_fresh(response)
+        }
+        document = json.dumps({"format": CACHE_FORMAT, "entries": entries})
+        temporary = self._path.with_name(self._path.name + ".tmp")
+        try:
+            temporary.write_text(document, encoding="utf-8")
+            os.replace(temporary, self._path)
+        except OSError as err:
+            with contextlib.suppress(OSError):
+                temporary.unlink(missing_ok=True)
+            print(f"cannot write cache {self._path}: {err}", file=sys.stderr)
+
+    def _is_fresh(self, response: _CachedResponse) -> bool:
+        return 0 <= self._now() - response.fetched < CACHE_LIFETIME_SECONDS
+
+    def _load(self) -> dict[str, _CachedResponse]:
+        try:
+            with self._path.open("rb") as handle:
+                raw = handle.read(MAX_CACHE_FILE_BYTES + 1)
+            if len(raw) > MAX_CACHE_FILE_BYTES:
+                raise ValueError(f"over {MAX_CACHE_FILE_BYTES} bytes")
+            return _parse_cache(raw)
+        except FileNotFoundError:
+            return {}
+        except (OSError, ValueError) as err:
+            print(f"ignoring cache {self._path}: {err}", file=sys.stderr)
+            return {}
+
+
+def _encode_body(body: bytes | None) -> str | None:
+    return None if body is None else base64.b64encode(body).decode("ascii")
+
+
+def _parse_cache(raw: bytes) -> dict[str, _CachedResponse]:
+    document = _load_json(raw)
+    if not isinstance(document, dict) or document.get("format") != CACHE_FORMAT:
+        raise ValueError(f"not a {CACHE_FORMAT} file")
+    stored = document.get("entries")
+    if not isinstance(stored, dict):
+        raise ValueError("entries is not an object")
+    entries: dict[str, _CachedResponse] = {}
+    for url, item in stored.items():
+        response = _cached_response(item)
+        if response is not None:
+            entries[url] = response
+    return entries
+
+
+def _cached_response(item: object) -> _CachedResponse | None:
+    """The stored response, or None for a malformed entry."""
+    if not isinstance(item, dict):
+        return None
+    fetched = item.get("fetched")
+    if isinstance(fetched, bool) or not isinstance(fetched, int | float):
+        return None
+    if not math.isfinite(fetched):
+        return None
+    try:
+        body = _decode_body(item.get("body"))
+    except (TypeError, ValueError):
+        return None
+    return _CachedResponse(float(fetched), body)
+
+
+def _decode_body(encoded: object) -> bytes | None:
+    if encoded is None:
+        return None
+    if not isinstance(encoded, str):
+        raise TypeError(f"body is {type(encoded).__name__}, not a string")
+    return base64.b64decode(encoded, validate=True)
 
 
 # Records
@@ -1216,12 +1345,48 @@ def _read_input(path: str) -> tuple[str, Path]:
     return text, base_dir
 
 
+def _cache_path(sources: str) -> Path:
+    path = Path(sources).resolve()
+    return path.with_name(f"{path.stem}.cache.json")
+
+
+def _check_all(sources: Sequence[CitedSource], fetch: Fetch) -> int:
+    retrieved = date.today()
+    verifications: list[Verification] = []
+    print(LOG_HEADER, flush=True)
+    deadline = time.monotonic() + MAX_RUN_SECONDS
+    for source in sources:
+        try:
+            if time.monotonic() > deadline:
+                verification = unchecked(
+                    source,
+                    "",
+                    f"run time limit of {MAX_RUN_SECONDS:.0f} s reached; rerun",
+                )
+            else:
+                verification = verify(source, fetch)
+        except Exception as err:
+            # The process boundary: an unforeseen fault is reported once, and
+            # the rows already printed stay valid.
+            print(f"verify.py stopped at {source.key}: {err!r}", file=sys.stderr)
+            return 3
+        verifications.append(verification)
+        print(log_row(verification, retrieved), flush=True)
+    print(f"\n{log_summary(verifications)}")
+    return 0 if all(v.status is Status.VERIFIED for v in verifications) else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Check cited references and quoted passages against registries."
     )
     parser.add_argument(
         "sources", help="JSON Lines file of cited sources, or - for standard input"
+    )
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="ignore cached responses and fetch again",
     )
     args = parser.parse_args(argv)
     # Sources and logs are UTF-8 files; a Windows console defaults to a legacy
@@ -1237,29 +1402,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     client = RegistryClient()
-    retrieved = date.today()
-    verifications: list[Verification] = []
-    print(LOG_HEADER, flush=True)
-    deadline = time.monotonic() + MAX_RUN_SECONDS
-    for source in sources:
-        try:
-            if time.monotonic() > deadline:
-                verification = unchecked(
-                    source,
-                    "",
-                    f"run time limit of {MAX_RUN_SECONDS:.0f} s reached; rerun",
-                )
-            else:
-                verification = verify(source, client)
-        except Exception as err:
-            # The process boundary: an unforeseen fault is reported once, and
-            # the rows already printed stay valid.
-            print(f"verify.py stopped at {source.key}: {err!r}", file=sys.stderr)
-            return 3
-        verifications.append(verification)
-        print(log_row(verification, retrieved), flush=True)
-    print(f"\n{log_summary(verifications)}")
-    return 0 if all(v.status is Status.VERIFIED for v in verifications) else 1
+    if args.sources == "-":
+        return _check_all(sources, client)
+    cache = ResponseCache(client, _cache_path(args.sources), refresh=args.refresh)
+    try:
+        return _check_all(sources, cache)
+    finally:
+        cache.save()
 
 
 if __name__ == "__main__":

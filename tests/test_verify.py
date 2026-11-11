@@ -1,3 +1,4 @@
+import base64
 import email.message
 import http.client
 import io
@@ -6,20 +7,24 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import date
 from pathlib import Path
 
 import pytest
 import verify as verify_module
 from verify import (
+    CACHE_FORMAT,
+    CACHE_LIFETIME_SECONDS,
     LOG_HEADER,
+    MAX_CACHED_BODY_BYTES,
     ArxivId,
     CitedSource,
     Fetch,
     Outcome,
     RegistryClient,
     RegistryUnavailableError,
+    ResponseCache,
     Status,
     Verification,
     log_row,
@@ -1202,3 +1207,322 @@ def test_main_exits_2_on_oversized_input(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(verify_module, "MAX_INPUT_CHARACTERS", 10)
     assert main(["sources.jsonl"]) == 2
+
+
+# Response cache
+
+
+URL = "https://api.example.org/works/1"
+OTHER_URL = "https://api.example.org/works/2"
+START = 1_000_000.0
+
+
+class FakeClock:
+    def __init__(self, now: float = START) -> None:
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def cache_over(
+    registry: FakeRegistry,
+    path: Path,
+    clock: FakeClock,
+    *,
+    refresh: bool = False,
+) -> ResponseCache:
+    return ResponseCache(registry, path, now=clock, refresh=refresh)
+
+
+def encoded(body: bytes | None) -> str | None:
+    return None if body is None else base64.b64encode(body).decode("ascii")
+
+
+def write_cache(
+    path: Path, entries: dict[str, object], fmt: str = CACHE_FORMAT
+) -> None:
+    path.write_text(json.dumps({"format": fmt, "entries": entries}), encoding="utf-8")
+
+
+def stored_urls(path: Path) -> set[str]:
+    return set(json.loads(path.read_text(encoding="utf-8"))["entries"])
+
+
+def test_cache_answers_a_repeat_lookup_without_a_request(tmp_path: Path) -> None:
+    registry = FakeRegistry([("example.org", b"body")])
+    cache = cache_over(registry, tmp_path / "c.json", FakeClock())
+    assert cache(URL) == b"body"
+    assert cache(URL) == b"body"
+    assert registry.requested == [URL]
+
+
+def test_cache_answers_from_the_file_written_by_an_earlier_run(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "c.json"
+    first = FakeRegistry([("example.org", b"body")])
+    writer = cache_over(first, path, FakeClock())
+    writer(URL)
+    writer.save()
+    second = FakeRegistry([])
+    clock = FakeClock(START + 60)
+    assert cache_over(second, path, clock)(URL) == b"body"
+    assert second.requested == []
+
+
+def test_cache_fetches_again_after_the_lifetime(tmp_path: Path) -> None:
+    registry = FakeRegistry([("example.org", b"body")])
+    clock = FakeClock()
+    cache = cache_over(registry, tmp_path / "c.json", clock)
+    cache(URL)
+    clock.now += CACHE_LIFETIME_SECONDS - 1
+    cache(URL)
+    assert registry.requested == [URL]
+    clock.now = START + CACHE_LIFETIME_SECONDS
+    cache(URL)
+    assert registry.requested == [URL, URL]
+
+
+def test_cache_treats_a_future_timestamp_as_expired(tmp_path: Path) -> None:
+    path = tmp_path / "c.json"
+    write_cache(path, {URL: {"fetched": START + 5, "body": encoded(b"old")}})
+    registry = FakeRegistry([("example.org", b"new")])
+    assert cache_over(registry, path, FakeClock())(URL) == b"new"
+    assert registry.requested == [URL]
+
+
+def test_refresh_fetches_despite_a_fresh_entry_and_stores_the_new_body(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "c.json"
+    write_cache(path, {URL: {"fetched": START, "body": encoded(b"old")}})
+    registry = FakeRegistry([("example.org", b"new")])
+    refreshing = cache_over(registry, path, FakeClock(), refresh=True)
+    assert refreshing(URL) == b"new"
+    refreshing.save()
+    later = FakeRegistry([])
+    assert cache_over(later, path, FakeClock())(URL) == b"new"
+    assert later.requested == []
+
+
+def test_cache_remembers_a_404(tmp_path: Path) -> None:
+    registry = FakeRegistry([("example.org", None)])
+    cache = cache_over(registry, tmp_path / "c.json", FakeClock())
+    assert cache(URL) is None
+    assert cache(URL) is None
+    assert registry.requested == [URL]
+
+
+def test_cache_returns_but_does_not_store_a_body_over_the_limit(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "c.json"
+    big = b"x" * (MAX_CACHED_BODY_BYTES + 1)
+    registry = FakeRegistry([("example.org", big)])
+    cache = cache_over(registry, path, FakeClock())
+    assert cache(URL) == big
+    cache.save()
+    assert stored_urls(path) == set()
+    cache(URL)
+    assert registry.requested == [URL, URL]
+
+
+def test_cache_stores_a_body_at_the_limit(tmp_path: Path) -> None:
+    path = tmp_path / "c.json"
+    registry = FakeRegistry([("example.org", b"x" * MAX_CACHED_BODY_BYTES)])
+    cache = cache_over(registry, path, FakeClock())
+    cache(URL)
+    cache.save()
+    assert stored_urls(path) == {URL}
+
+
+def test_cache_propagates_a_failure_and_stores_nothing(tmp_path: Path) -> None:
+    path = tmp_path / "c.json"
+    registry = FakeRegistry([("example.org", RegistryUnavailableError("down"))])
+    cache = cache_over(registry, path, FakeClock())
+    with pytest.raises(RegistryUnavailableError):
+        cache(URL)
+    cache.save()
+    assert stored_urls(path) == set()
+
+
+def test_save_leaves_out_expired_entries(tmp_path: Path) -> None:
+    path = tmp_path / "c.json"
+    write_cache(
+        path,
+        {
+            URL: {"fetched": START - CACHE_LIFETIME_SECONDS - 1, "body": None},
+            OTHER_URL: {"fetched": START - 10, "body": None},
+        },
+    )
+    cache = cache_over(FakeRegistry([]), path, FakeClock())
+    cache.save()
+    assert stored_urls(path) == {OTHER_URL}
+
+
+def test_save_writes_the_format_marker_and_leaves_no_temporary_file(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "c.json"
+    cache = cache_over(FakeRegistry([("example.org", b"b")]), path, FakeClock())
+    cache(URL)
+    cache.save()
+    written = json.loads(path.read_text(encoding="utf-8"))
+    assert written["format"] == CACHE_FORMAT
+    assert written["entries"][URL] == {"fetched": START, "body": encoded(b"b")}
+    assert [p.name for p in tmp_path.iterdir()] == ["c.json"]
+
+
+def test_a_missing_cache_file_starts_empty_without_a_message(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    registry = FakeRegistry([("example.org", b"body")])
+    assert cache_over(registry, tmp_path / "c.json", FakeClock())(URL) == b"body"
+    assert capsys.readouterr().err == ""
+
+
+def _corrupt(path: Path) -> None:
+    path.write_text("{not json", encoding="utf-8")
+
+
+def _foreign(path: Path) -> None:
+    write_cache(path, {URL: {"fetched": START, "body": None}}, fmt="other/1")
+
+
+def _wrong_shape(path: Path) -> None:
+    path.write_text(
+        json.dumps({"format": CACHE_FORMAT, "entries": []}), encoding="utf-8"
+    )
+
+
+def _oversized(path: Path) -> None:
+    write_cache(path, {URL: {"fetched": START, "body": encoded(b"x" * 100)}})
+
+
+@pytest.mark.parametrize("damage", [_corrupt, _foreign, _wrong_shape, _oversized])
+def test_an_unusable_cache_file_is_reported_ignored_and_replaced(
+    damage: Callable[[Path], None],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    path = tmp_path / "c.json"
+    damage(path)
+    if damage is _oversized:
+        monkeypatch.setattr(verify_module, "MAX_CACHE_FILE_BYTES", 50)
+    registry = FakeRegistry([("example.org", b"body")])
+    cache = cache_over(registry, path, FakeClock())
+    assert cache(URL) == b"body"
+    assert registry.requested == [URL]
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1
+    assert str(path) in err
+    cache.save()
+    assert stored_urls(path) == {URL}
+
+
+def test_an_unreadable_cache_path_is_reported(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "c.json"
+    path.mkdir()
+    registry = FakeRegistry([("example.org", b"body")])
+    assert cache_over(registry, path, FakeClock())(URL) == b"body"
+    assert str(path) in capsys.readouterr().err
+
+
+def test_a_malformed_entry_is_skipped_while_good_ones_load(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "c.json"
+    good = {"fetched": START, "body": encoded(b"good")}
+    write_cache(
+        path,
+        {
+            "https://e/bad-base64": {"fetched": START, "body": "!!not base64!!"},
+            "https://e/bad-time": {"fetched": "yesterday", "body": None},
+            "https://e/bad-body": {"fetched": START, "body": 7},
+            "https://e/not-a-dict": 3,
+            "https://e/bool-time": {"fetched": True, "body": None},
+            URL: good,
+        },
+    )
+    registry = FakeRegistry([("https://e/", b"fresh")])
+    cache = cache_over(registry, path, FakeClock())
+    assert cache(URL) == b"good"
+    assert cache("https://e/bad-time") == b"fresh"
+    assert capsys.readouterr().err == ""
+
+
+# Cache in the command line
+
+
+def run_main_with(
+    registry: FakeRegistry, monkeypatch: pytest.MonkeyPatch, argv: list[str]
+) -> int:
+    monkeypatch.setattr(verify_module, "RegistryClient", lambda: registry)
+    return main(argv)
+
+
+def test_main_writes_the_cache_beside_the_sources_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder = tmp_path / "drafts"
+    folder.mkdir()
+    (folder / "refs.jsonl").write_text(json.dumps(entry()), encoding="utf-8")
+    argv = [str(folder / "refs.jsonl")]
+    assert run_main_with(doi_registry(), monkeypatch, argv) == 0
+    assert (folder / "refs.cache.json").is_file()
+
+
+def test_main_rerun_makes_no_repeat_requests_and_refresh_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sources_file = str(tmp_path / "refs.jsonl")
+    (tmp_path / "refs.jsonl").write_text(json.dumps(entry()), encoding="utf-8")
+    first = doi_registry()
+    run_main_with(first, monkeypatch, [sources_file])
+    second = doi_registry()
+    assert run_main_with(second, monkeypatch, [sources_file]) == 0
+    assert second.requested == []
+    third = doi_registry()
+    assert run_main_with(third, monkeypatch, [sources_file, "--refresh"]) == 0
+    assert third.requested == first.requested
+
+
+def test_main_makes_no_cache_for_standard_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(entry())))
+    assert run_main_with(doi_registry(), monkeypatch, ["-"]) == 0
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_main_writes_the_cache_when_the_run_stops_on_a_fault(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lines = [json.dumps(entry()), json.dumps(entry(key="Second", id="10.1000/second"))]
+    (tmp_path / "refs.jsonl").write_text("\n".join(lines), encoding="utf-8")
+    registry = FakeRegistry(
+        [
+            ("10.1000/second", RuntimeError("bug")),
+            ("api.crossref.org", crossref()),
+            ("api.openalex.org", openalex()),
+        ]
+    )
+    assert run_main_with(registry, monkeypatch, [str(tmp_path / "refs.jsonl")]) == 3
+    assert (tmp_path / "refs.cache.json").is_file()
+
+
+def test_main_keeps_its_exit_code_when_the_cache_cannot_be_written(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (tmp_path / "refs.jsonl").write_text(json.dumps(entry()), encoding="utf-8")
+    (tmp_path / "refs.cache.json").mkdir()
+    argv = [str(tmp_path / "refs.jsonl")]
+    assert run_main_with(doi_registry(), monkeypatch, argv) == 0
+    assert "refs.cache.json" in capsys.readouterr().err
