@@ -86,8 +86,8 @@
     },
     {
       "id": 6,
-      "prompt": "Write an email to my supervisor, Dr Amara Okonkwo, asking to move our Thursday 11am meeting. My training run on the cluster won't finish until Friday morning so I'll have nothing new to show. Suggest Monday 17 November at 2pm instead, or any time on Tuesday. Keep it short.",
-      "expected_output": "A short email with a subject line that gives the reason, proposes Monday 17 November at 2pm or Tuesday, and asks which suits.",
+      "prompt": "Write an email to my supervisor, Dr Amara Okonkwo, asking to move our Thursday 11am meeting. My training run on the cluster won't finish until Friday morning so I'll have nothing new to show. Suggest Monday 16 November at 2pm instead, or any time on Tuesday. Keep it short.",
+      "expected_output": "A short email with a subject line that gives the reason, proposes Monday 16 November at 2pm or Tuesday, and asks which suits.",
       "files": [],
       "expectations": [
         "A subject line is given",

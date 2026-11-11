@@ -32,6 +32,9 @@ SMALL_INTEGER_LIMIT = 10
 MAX_LISTED_ITEMS = 10
 
 WORD = re.compile(r"[A-Za-z0-9][\w'\u2019-]*")
+# The skill stamps markers and logs with the date it checked a source, so
+# ISO dates are written at run time and cannot come from the inputs.
+ISO_DATE = re.compile(r"\b[0-9]{4}-[0-9]{2}-[0-9]{2}\b")
 NUMBER = re.compile(r"[0-9]+(?:[.,][0-9]+)*")
 THOUSANDS = re.compile(r"[0-9]{1,3}(?:,[0-9]{3})+")
 HASHTAG = re.compile(r"(?<![\w#&])#[A-Za-z]\w*")
@@ -202,7 +205,7 @@ def load_cases(path: Path) -> dict[int, EvalCase]:
 
 def _numbers(text: str) -> set[str]:
     found = set()
-    for match in NUMBER.finditer(text):
+    for match in NUMBER.finditer(ISO_DATE.sub(" ", text)):
         number = match.group()
         if THOUSANDS.fullmatch(number):
             number = number.replace(",", "")

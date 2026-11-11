@@ -43,6 +43,7 @@ def scored(check: Check, deliverable: str) -> bool:
         (NumbersFromInputs(), "We used 6000 images.", True),
         (NumbersFromInputs(), "On 17 November we ran 3 fits.", True),
         (NumbersFromInputs(), "Accuracy was 94.1%.", False),
+        (NumbersFromInputs(), "[UNVERIFIED: no record on 2026-11-11]", True),
     ],
 )
 def test_text_checks_pass_and_fail(
