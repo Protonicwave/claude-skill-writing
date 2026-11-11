@@ -25,4 +25,4 @@ A reader scrolling past who stops because the first line says something specific
 
 ## Facts in public
 
-A post is public and permanent. Every number comes from the student's notes; unpublished results, grades and anything under embargo or owned by a group or company stay out unless the notes say the student may share them. Never claim impact the work has not shown ("could revolutionise"). When unsure what may be shared, write the post without it and ask in the delivery note.
+A post is public and permanent. Every number comes from the student's notes. The student's own results from their own project are theirs to share, so the headline one goes in. What belongs to someone else stays out unless the notes say it may be shared: a research group's or company's unpublished results, anything under embargo or a confidentiality agreement, other people's marks or details. Never claim impact the work has not shown ("could revolutionise"). When a result might be restricted, for example because the project used a collaboration's private data, keep it in and say in the delivery note what the student should check before posting.
