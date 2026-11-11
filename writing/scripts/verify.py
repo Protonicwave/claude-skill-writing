@@ -1664,6 +1664,8 @@ def bib_report(
 
 
 MAX_UNCHECKED_INTEGER = 10
+# `\nocite{*}` cites every source in the bibliography.
+ALL_SOURCES_KEY = "*"
 NO_CITES_NOTICE = (
     r"no LaTeX \cite or Pandoc [@key] citations found, "
     "so keys and numbers were not checked"
@@ -1754,7 +1756,8 @@ def audit_draft(
         findings += _cite_findings(cites, lines, by_key, statuses)
         findings += _number_findings(text, spans, by_key, lines)
         cited = {key for span in cites for key in span.keys}
-        uncited = tuple(key for key in by_key if key not in cited)
+        if ALL_SOURCES_KEY not in cited:
+            uncited = tuple(key for key in by_key if key not in cited)
     findings += (
         AuditFinding(lines.number(m.start()), Severity.MARKER, _squash(m.group()))
         for m in markers
@@ -1806,6 +1809,8 @@ def _key_finding(
     by_key: dict[str, CitedSource],
     statuses: dict[str, Status],
 ) -> AuditFinding | None:
+    if key == ALL_SOURCES_KEY:
+        return None
     if key not in by_key:
         return AuditFinding(
             line, Severity.ERROR, f"`{key}` is cited but not in the sources"

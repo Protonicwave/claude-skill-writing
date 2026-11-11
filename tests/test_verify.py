@@ -2358,6 +2358,19 @@ def test_audit_does_not_check_numbers_inside_a_marker() -> None:
     assert [f.severity for f in audit.findings] == [Severity.MARKER]
 
 
+def test_audit_treats_nocite_star_as_citing_every_source() -> None:
+    audit = audited(
+        "\\nocite{*}\nSee [@a].", source_entry("a"), source_entry("park2017")
+    )
+    assert found(audit) == []
+    assert audit.uncited == ()
+
+
+def test_audit_still_checks_the_other_keys_beside_a_nocite_star() -> None:
+    audit = audited("\\nocite{*, gone}")
+    assert found(audit) == [(1, "error", "`gone` is cited but not in the sources")]
+
+
 def test_audit_lists_a_source_that_is_never_cited() -> None:
     audit = audited("See [@a].", source_entry("a"), source_entry("park2017"))
     assert audit.uncited == ("park2017",)
