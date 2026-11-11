@@ -60,7 +60,7 @@ These are the rules that matter most. `tells.md` and `clarity.md` give the evide
 1. Gather as above. Ask for what is missing rather than guess.
 2. For anything over about 800 words, agree an outline first: each paragraph as one sentence stating its claim.
 3. Draft in the chosen register.
-4. Revise against `tells.md` and `clarity.md`. Read each paragraph as the named reader would.
+4. Revise against `tells.md` and `clarity.md`. Read each paragraph as the named reader would. For anything longer than a few paragraphs, print the first sentence of each with `check.py <draft> --outline` and read them in order: they should state the argument on their own. A first sentence that does not state its paragraph's claim marks the paragraph to revise.
 5. Run the checker on the draft. In Claude Code, save the draft to a file (or use the file being written) and run:
 
    ```
@@ -68,6 +68,8 @@ These are the rules that matter most. `tells.md` and `clarity.md` give the evide
    ```
 
    It reads `-` as standard input. Fix every error. Judge every warning: a listed word used in its technical sense (potential energy, robust estimator) stays; decoration goes. Where code execution is unavailable, apply `tells.md` by hand.
+
+   When the draft cites, also run `scripts/verify.py` with `--draft`, as `sources.md` says, and fix every error it reports: a cite key with no verified source, or a source that failed. Its warnings mark numbers in citing sentences that no quote contains; each is either the student's own number or a claim to trace.
 6. Have the draft read with fresh eyes, as `review.md` says: whether each quote supports its claim as worded, whether the named reader can follow it, and, when a rubric exists, how an examiner would mark it. Settle every finding by changing the text or showing the finding wrong.
 7. Deliver the text in the requested format. After it, briefly and only if they exist: open markers, where the verification log is, and any judgement call the student should check. No summary of what was written.
 
