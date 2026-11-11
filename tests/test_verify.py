@@ -14,6 +14,7 @@ from datetime import date
 from pathlib import Path
 from xml.sax.saxutils import escape
 
+import check as check_module
 import pytest
 import verify as verify_module
 from verify import (
@@ -2351,6 +2352,17 @@ def test_audit_reports_each_open_gap_marker_with_its_line_and_text() -> None:
         (3, "marker", "[UNVERIFIED: a claim]"),
         (4, "marker", "[CLAIM NOT CHECKED: another]"),
     ]
+
+
+def test_audit_marker_pattern_is_the_one_check_py_uses() -> None:
+    assert verify_module.GAP_MARKER == check_module.GAP_MARKER
+
+
+@pytest.mark.parametrize(
+    "marker", ["[UNVERIFIED]", "[unverified: a claim]", "[Data Needed: x]"]
+)
+def test_audit_reads_a_marker_without_a_colon_or_in_lower_case(marker: str) -> None:
+    assert [f.text for f in audited(marker).findings] == [marker]
 
 
 def test_audit_does_not_check_numbers_inside_a_marker() -> None:

@@ -1678,9 +1678,11 @@ _LATEX_CITE = re.compile(
 _LATEX_COMMENT = re.compile(r"\\.|%[^\n]*")
 _PANDOC_BRACKET = re.compile(r"\[([^\[\]]*)\]")
 _PANDOC_KEY = re.compile(r"(?<!\w)-?@(\w(?:\w|[:.#$%&+?<>~/-](?=\w))*)")
-_MARKER = re.compile(
-    r"\[(?:DATA NEEDED|CITATION NEEDED|UNVERIFIED|CLAIM NOT CHECKED):[^\[\]]*\]"
+# Kept equal to check.py's GAP_MARKER: the scripts cannot import each other.
+GAP_MARKER = (
+    r"\[(?:UNVERIFIED|CITATION NEEDED|CLAIM NOT CHECKED|DATA NEEDED)(?::[^\]]*)?\]"
 )
+_MARKER = re.compile(GAP_MARKER, re.IGNORECASE)
 _SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+(?=[A-Z\\])")
 _THOUSANDS_COMMA = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")

@@ -179,7 +179,10 @@ CONNECTIVE_OPENERS = (
     r"Additionally|Moreover|Furthermore|Notably|Importantly|Interestingly|Crucially"
     r"|Ultimately|Overall|In addition"
 )
-GAP_MARKER = r"\[(?:UNVERIFIED|CITATION NEEDED|CLAIM NOT CHECKED|DATA NEEDED)[^\]]*\]"
+# Kept equal to verify.py's GAP_MARKER: the scripts cannot import each other.
+GAP_MARKER = (
+    r"\[(?:UNVERIFIED|CITATION NEEDED|CLAIM NOT CHECKED|DATA NEEDED)(?::[^\]]*)?\]"
+)
 US_WORDS = (
     r"colors?|colored|coloring|behaviors?|behavioral|favors?|favored|favorite|honors?"
     # Not gray: it is also the SI unit of absorbed dose.
