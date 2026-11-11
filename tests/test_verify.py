@@ -82,6 +82,37 @@ def crossref(**changes: object) -> bytes:
     return json.dumps({"status": "ok", "message": present}).encode()
 
 
+def datacite(**changes: object) -> bytes:
+    """A DataCite DOI response for Feynman 1982, with attributes replaced.
+
+    An attribute set to None is left out of the record.
+    """
+    attributes: dict[str, object] = {
+        "titles": [{"title": "Simulating physics with computers"}],
+        "creators": [
+            {"name": "Feynman, R.", "familyName": "Feynman", "givenName": "R."}
+        ],
+        "publicationYear": 1982,
+        "container": {
+            "title": "International Journal of Theoretical Physics",
+            "volume": "21",
+            "firstPage": "467",
+        },
+        "publisher": "Springer",
+        "descriptions": [
+            {"description": FEYNMAN_QUOTE.capitalize(), "descriptionType": "Other"},
+            {
+                "description": "We ask: " + FEYNMAN_QUOTE,
+                "descriptionType": "Abstract",
+            },
+        ],
+        "types": {"resourceTypeGeneral": "JournalArticle"},
+    }
+    attributes.update(changes)
+    present = {name: value for name, value in attributes.items() if value is not None}
+    return json.dumps({"data": {"attributes": present}}).encode()
+
+
 def openalex(*, retracted: bool = False, abstract: str | None = None) -> bytes:
     index: dict[str, list[int]] = {}
     for position, word in enumerate((abstract or "").split()):
@@ -181,6 +212,19 @@ def doi_registry(
     return FakeRegistry(
         [
             ("api.crossref.org", crossref() if work is None else work),
+            ("api.openalex.org", openalex() if alex is None else alex),
+        ]
+    )
+
+
+def datacite_registry(
+    record: bytes | Exception | None, alex: bytes | Exception | None = None
+) -> FakeRegistry:
+    """A registry where Crossref has no record and DataCite answers `record`."""
+    return FakeRegistry(
+        [
+            ("api.crossref.org", None),
+            ("api.datacite.org", record),
             ("api.openalex.org", openalex() if alex is None else alex),
         ]
     )
@@ -437,10 +481,10 @@ def test_unstated_volume_and_pages_are_not_held_against_the_source() -> None:
 
 
 def test_missing_doi_is_unverified() -> None:
-    registry = FakeRegistry([("api.crossref.org", None)])
-    verification = check({}, registry)
+    verification = check({}, datacite_registry(None))
     assert verification.status is Status.UNVERIFIED
-    assert "no Crossref record" in verification.reason
+    assert verification.reason == "no Crossref or DataCite record for this DOI"
+    assert "api.datacite.org" in verification.query_url
 
 
 def test_unreachable_registry_is_unverified_not_an_error() -> None:
@@ -514,6 +558,133 @@ def test_malformed_record_fields_are_skipped_not_fatal() -> None:
     verification = check({}, doi_registry(work))
     assert outcomes(verification)["year"] is Outcome.MATCH
     assert [notice.kind for notice in verification.notices] == ["correction"]
+
+
+# DataCite records
+
+
+def test_datacite_record_matching_every_field_is_verified() -> None:
+    verification = check({}, datacite_registry(datacite()))
+    assert verification.status is Status.VERIFIED
+    assert set(outcomes(verification).values()) == {Outcome.MATCH}
+    assert verification.claims[0].found_in == "abstract (DataCite)"
+    assert verification.venue == "International Journal of Theoretical Physics"
+    assert verification.version == "version of record"
+
+
+def test_datacite_is_not_asked_when_crossref_has_the_record() -> None:
+    registry = doi_registry()
+    check({}, registry)
+    assert not any("datacite" in url for url in registry.requested)
+
+
+def test_datacite_unavailable_after_a_crossref_miss_is_unverified() -> None:
+    registry = datacite_registry(RegistryUnavailableError("HTTP 503"))
+    verification = check({}, registry)
+    assert verification.status is Status.UNVERIFIED
+    assert verification.reason.startswith("no Crossref record; DataCite unavailable")
+    assert "HTTP 503" in verification.reason
+
+
+def test_crossref_outage_does_not_fall_back_to_datacite() -> None:
+    registry = FakeRegistry([("api.crossref.org", RegistryUnavailableError("x"))])
+    verification = check({}, registry)
+    assert "Crossref unavailable" in verification.reason
+
+
+@pytest.mark.parametrize(
+    "body",
+    [b"<html>busy</html>", b'{"data": "oops"}', b"[1, 2]", b'{"data": {}}'],
+    ids=["not-json", "data-not-object", "not-object", "no-attributes"],
+)
+def test_unreadable_datacite_record_is_unverified(body: bytes) -> None:
+    verification = check({}, datacite_registry(body))
+    assert verification.status is Status.UNVERIFIED
+    assert verification.reason.startswith(
+        "no Crossref record; DataCite returned an unreadable record"
+    )
+
+
+def test_malformed_datacite_fields_are_skipped_not_fatal() -> None:
+    record = datacite(
+        titles=[
+            "junk",
+            {"title": 5},
+            {"title": "Simulating physics with computers"},
+            {"title": "Ignored translation", "titleType": "TranslatedTitle"},
+        ],
+        creators=[7, {"name": "Feynman"}],
+        publicationYear="1982",
+        container=["not", "an", "object"],
+        publisher={"name": "Springer"},
+        descriptions=[None, {"description": 3, "descriptionType": "Abstract"}],
+    )
+    verification = check({}, datacite_registry(record))
+    assert outcomes(verification)["title"] is Outcome.MATCH
+    assert outcomes(verification)["authors"] is Outcome.MATCH
+    assert outcomes(verification)["year"] is Outcome.MATCH
+    assert outcomes(verification)["volume"] is Outcome.NOT_IN_RECORD
+    assert verification.venue == "Springer"
+    assert verification.status is Status.CLAIM_NOT_CHECKED
+
+
+@pytest.mark.parametrize("year", [None, True, "nineteen", [1982]])
+def test_unusable_datacite_year_is_a_mismatch_not_a_crash(year: object) -> None:
+    verification = check({}, datacite_registry(datacite(publicationYear=year)))
+    assert outcomes(verification)["year"] is Outcome.MISMATCH
+
+
+def test_datacite_subtitle_is_part_of_the_title() -> None:
+    record = datacite(
+        titles=[
+            {"title": "Simulating physics"},
+            {"title": "with computers", "titleType": "Subtitle"},
+        ]
+    )
+    verification = check({}, datacite_registry(record))
+    assert outcomes(verification)["title"] is Outcome.MATCH
+
+
+def test_datacite_surname_falls_back_to_the_name() -> None:
+    record = datacite(creators=[{"name": "Feynman"}])
+    verification = check({}, datacite_registry(record))
+    assert outcomes(verification)["authors"] is Outcome.MATCH
+
+
+def test_datacite_surname_is_read_from_a_family_first_name() -> None:
+    record = datacite(creators=[{"name": "Feynman, Richard P."}])
+    verification = check({}, datacite_registry(record))
+    assert outcomes(verification)["authors"] is Outcome.MATCH
+
+
+def test_datacite_organisation_name_is_kept_whole() -> None:
+    record = datacite(
+        creators=[{"name": "ATLAS Collaboration, CERN", "nameType": "Organizational"}]
+    )
+    verification = check(
+        {"authors": ["ATLAS Collaboration, CERN"]}, datacite_registry(record)
+    )
+    assert outcomes(verification)["authors"] is Outcome.MATCH
+
+
+def test_datacite_record_is_enriched_with_openalex() -> None:
+    registry = datacite_registry(datacite(), alex=openalex(retracted=True))
+    verification = check({}, registry)
+    assert verification.status is Status.RETRACTED
+
+
+def test_retraction_column_names_datacite_and_openalex() -> None:
+    verification = check({}, datacite_registry(datacite()))
+    assert verification.retraction_checked == "DataCite and OpenAlex"
+    row = log_row(verification, date(2026, 11, 8))
+    assert "none found in DataCite and OpenAlex on 2026-11-08" in row
+
+
+def test_retraction_column_records_an_openalex_outage_after_datacite() -> None:
+    registry = datacite_registry(datacite(), alex=RegistryUnavailableError("HTTP 503"))
+    verification = check({}, registry)
+    assert verification.status is Status.VERIFIED
+    assert verification.retraction_checked.startswith("DataCite; OpenAlex unavailable")
 
 
 # Quoted passages
@@ -745,7 +916,7 @@ def test_log_has_one_row_per_source_and_escapes_pipes() -> None:
         entry(title="A | B"),
         entry(key="Missing", id="10.9999/none"),
     )
-    missing = verify(second, FakeRegistry([("api.crossref.org", None)]))
+    missing = verify(second, datacite_registry(None))
     verifications = [verify(first, registry), missing]
     rows = [log_row(v, date(2026, 11, 8)) for v in verifications]
     header, rule = LOG_HEADER.splitlines()
