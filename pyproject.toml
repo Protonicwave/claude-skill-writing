@@ -28,9 +28,9 @@ max-complexity = 10
 
 [tool.mypy]
 strict = true
-files = ["writing/scripts", "install.py", "tests"]
-mypy_path = ["writing/scripts", "."]
+files = ["writing/scripts", "evals", "install.py", "tests"]
+mypy_path = ["writing/scripts", "evals", "."]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["writing/scripts", "."]
+pythonpath = ["writing/scripts", "evals", "."]

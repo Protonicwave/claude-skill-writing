@@ -8,7 +8,8 @@ A skill for Claude that writes and edits prose people read (reports, dissertatio
 - `writing/scripts/check.py`: the draft checker, standard library only.
 - `writing/scripts/verify.py`: the source verifier, standard library only.
 - `install.py`: installs the skill and builds the upload zip.
-- `tests/`: checker rules, verifier, skill structure and installer.
+- `evals/`: the eval set, its input files and the grader.
+- `tests/`: checker rules, verifier, grader, skill structure and installer.
 
 ## Install
 
@@ -52,5 +53,17 @@ uv sync
 uv run pytest
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
-uv run vulture writing/scripts install.py tests --min-confidence 80
+uv run vulture writing/scripts install.py tests evals --min-confidence 80
 ```
+
+### Evals
+
+`evals/evals.json` holds nine cases in skill-creator's format, with their input files in `evals/files/`. Each case lists judgement expectations, which a grader reads the output against, and programmatic checks: checker errors, word and hashtag limits, banned phrases, required gap markers, the share of one-sentence paragraphs, and whether every number in the output appears in the prompt or input files.
+
+Run each case with skill-creator, saving the delivered text as `outputs/deliverable.md` in a run directory under `evals/workspace/`, then score the programmatic checks:
+
+```
+uv run python evals/grade.py evals/workspace/iteration-1/*/with_skill
+```
+
+The grader merges its results into each run's `grading.json`, keeping any expectations a grader has already written there.

@@ -1,0 +1,1 @@
+Graphene has become a test bed for strongly correlated electrons. Twisting two sheets by a small angle flattens the electronic bands, and in a flat band the interaction between electrons outweighs their kinetic energy. This project asks whether the same flattening appears in a trilayer stack.
