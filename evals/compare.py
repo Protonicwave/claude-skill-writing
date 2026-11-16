@@ -19,10 +19,11 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from grade import read_capped_text
+
 DEFAULT_REFERENCE = Path(__file__).resolve().parent / "reference.json"
 ARM = "with_skill"
 SUBAGENTS = Path("outputs") / "subagents.json"
-MAX_INPUT_BYTES = 1_000_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,11 +60,7 @@ def _object(value: object, where: object) -> dict[str, object]:
 
 
 def _load(path: Path) -> object:
-    if not path.is_file():
-        raise ValueError(f"{path} is missing")
-    if path.stat().st_size > MAX_INPUT_BYTES:
-        raise ValueError(f"{path} is larger than {MAX_INPUT_BYTES} bytes")
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(read_capped_text(path))
 
 
 def _arm(record: dict[str, object], name: str, where: str) -> Arm:

@@ -163,7 +163,8 @@ def _parse_check(spec: object) -> Check:
     return parser(spec)
 
 
-def _read_text(path: Path) -> str:
+def read_capped_text(path: Path) -> str:
+    """The UTF-8 text of an eval file; ValueError when it is over MAX_INPUT_BYTES."""
     if path.stat().st_size > MAX_INPUT_BYTES:
         raise ValueError(f"{path} is larger than {MAX_INPUT_BYTES} bytes")
     return path.read_text(encoding="utf-8")
@@ -179,7 +180,7 @@ def _parse_case(record: object, files_root: Path) -> EvalCase:
         path = files_root / name
         if not path.is_file():
             raise ValueError(f"input file {path} does not exist")
-        texts.append(_read_text(path))
+        texts.append(read_capped_text(path))
     return EvalCase(
         id=_field(record, "id", int),
         expectations=_strings(record, "expectations"),
@@ -190,7 +191,7 @@ def _parse_case(record: object, files_root: Path) -> EvalCase:
 
 def load_cases(path: Path) -> dict[int, EvalCase]:
     """Parse evals.json into cases by id; raise ValueError on any malformed field."""
-    document = json.loads(_read_text(path))
+    document = json.loads(read_capped_text(path))
     if not isinstance(document, dict):
         raise ValueError(f"expected {path} to hold a JSON object")
     _field(document, "skill_name", str)
@@ -336,7 +337,7 @@ def score(check: Check, deliverable: str, input_text: str) -> Expectation:
 def _grade_run(run_dir: Path, cases: Mapping[int, EvalCase]) -> list[Expectation]:
     """Score every check of the run's eval; a missing deliverable fails them all."""
     metadata_path = run_dir.parent / "eval_metadata.json"
-    metadata = json.loads(_read_text(metadata_path))
+    metadata = json.loads(read_capped_text(metadata_path))
     if not isinstance(metadata, dict):
         raise ValueError(f"expected {metadata_path} to hold a JSON object")
     eval_id = _field(metadata, "eval_id", int)
@@ -349,7 +350,7 @@ def _grade_run(run_dir: Path, cases: Mapping[int, EvalCase]) -> list[Expectation
     if not deliverable_path.is_file():
         missing = f"{DELIVERABLE.as_posix()} is missing"
         return [Expectation(_describe(check), False, missing) for check in case.checks]
-    deliverable = _read_text(deliverable_path)
+    deliverable = read_capped_text(deliverable_path)
     return [score(check, deliverable, case.input_text) for check in case.checks]
 
 
@@ -387,7 +388,7 @@ def _merged_grading(
 def _existing_grading(path: Path) -> dict[str, object]:
     if not path.is_file():
         return {"expectations": []}
-    existing = json.loads(_read_text(path))
+    existing = json.loads(read_capped_text(path))
     if not isinstance(existing, dict):
         raise ValueError(f"expected {path} to hold a JSON object")
     return existing
