@@ -24,9 +24,9 @@
       }
     },
     "data-gap": {
-      "total": 7,
+      "total": 8,
       "with_skill": {
-        "passed": 7,
+        "passed": 8,
         "tokens": 53445
       },
       "without_skill": {
@@ -35,9 +35,9 @@
       }
     },
     "lay-summary-limit": {
-      "total": 6,
+      "total": 8,
       "with_skill": {
-        "passed": 6,
+        "passed": 8,
         "tokens": 85619
       },
       "without_skill": {
@@ -101,20 +101,20 @@
       }
     },
     "literature-review": {
-      "total": 7,
+      "total": 8,
       "with_skill": {
-        "passed": 7,
+        "passed": 8,
         "tokens": 209328
       },
       "without_skill": {
-        "passed": 4,
+        "passed": 5,
         "tokens": 74121
       }
     },
     "rubric-methods": {
-      "total": 7,
+      "total": 8,
       "with_skill": {
-        "passed": 7,
+        "passed": 8,
         "tokens": 101042
       },
       "without_skill": {
