@@ -584,13 +584,22 @@ def _traceable_numbers(text: str) -> Iterator[str]:
             yield number
 
 
-def unsourced_number_issues(text: str, inputs: str) -> list[Issue]:
-    """A warning for each number in the draft, markup included, absent from inputs."""
-    known = set(_traceable_numbers(inputs))
+def _without_markup(line: str, fmt: Format) -> str:
+    """The line without cite keys, labels, file names, options or URLs; maths stays."""
+    if fmt is Format.LATEX:
+        line = LATEX_COMMAND.sub(" ", LATEX_DROPPED_COMMAND.sub(" ", line))
+    elif fmt is Format.MARKDOWN:
+        line = MARKDOWN_LINK_TARGET.sub("]", line)
+    return URL.sub(" ", line)
+
+
+def unsourced_number_issues(text: str, fmt: Format, inputs_text: str) -> list[Issue]:
+    """A warning for each number in the draft, maths included, no input contains."""
+    known = set(_traceable_numbers(inputs_text))
     unsourced = dict.fromkeys(
         (line, number)
         for line, raw in enumerate(text.splitlines(), start=1)
-        for number in _traceable_numbers(raw)
+        for number in _traceable_numbers(_without_markup(raw, fmt))
         if number not in known
     )
     return [
@@ -678,7 +687,7 @@ def _issues(
     if max_words and (over := word_limit_issue(text, fmt, max_words)):
         issues.append(over)
     if inputs:
-        issues += unsourced_number_issues(text, "\n".join(inputs))
+        issues += unsourced_number_issues(text, fmt, "\n".join(inputs))
     return sorted(issues, key=lambda issue: issue.line)
 
 

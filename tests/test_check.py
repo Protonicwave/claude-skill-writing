@@ -560,13 +560,15 @@ NOTES = "Peaks at 7.1 V and 12.0 V from 6000 images, 1234.5 V in total."
 def test_numbers_absent_from_the_inputs_are_flagged(
     draft: str, unsourced: list[str]
 ) -> None:
-    issues = unsourced_number_issues(draft, NOTES)
+    issues = unsourced_number_issues(draft, Format.PLAIN, NOTES)
     assert [issue.message.split()[0] for issue in issues] == unsourced
     assert all(issue.severity is Severity.WARNING for issue in issues)
 
 
 def test_unsourced_number_is_reported_once_per_line() -> None:
-    issues = unsourced_number_issues("Gain 94.1 then 94.1.\nAgain 94.1.", NOTES)
+    issues = unsourced_number_issues(
+        "Gain 94.1 then 94.1.\nAgain 94.1.", Format.PLAIN, NOTES
+    )
     assert [(issue.line, issue.rule) for issue in issues] == [
         (1, "number-source"),
         (2, "number-source"),
@@ -631,6 +633,28 @@ def test_cli_oversized_input_is_not_called_the_draft(
     err = capsys.readouterr().err
     assert str(notes) in err
     assert "draft" not in err.replace(str(tmp_path), "")
+
+
+@pytest.mark.parametrize(
+    ("draft", "fmt"),
+    [
+        (r"As found before~\cite{carleo2017}.", Format.LATEX),
+        (r"\includegraphics[width=0.8\textwidth]{fig12.pdf}", Format.LATEX),
+        (r"\documentclass[12pt]{article}", Format.LATEX),
+        (r"See Fig.~\ref{fig:run12}.", Format.LATEX),
+        ("See [the data](https://example.org/set/48213).", Format.MARKDOWN),
+        ("![Peaks](figures/fig12.png)", Format.MARKDOWN),
+        ("Data at https://example.org/set/48213 today.", Format.PLAIN),
+    ],
+)
+def test_numbers_in_markup_are_not_traced(draft: str, fmt: Format) -> None:
+    assert unsourced_number_issues(draft, fmt, NOTES) == []
+
+
+def test_numbers_in_latex_maths_are_still_traced() -> None:
+    maths = r"We find $m = 125.3\,\mathrm{GeV}$."
+    issues = unsourced_number_issues(maths, Format.LATEX, NOTES)
+    assert [issue.message.split()[0] for issue in issues] == ["125.3"]
 
 
 def test_cli_refuses_standard_input_as_an_input(tmp_path: Path) -> None:
