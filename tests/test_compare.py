@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -101,9 +102,7 @@ def test_exits_2_naming_a_missing_case_or_arm(
     if target.is_file():
         target.unlink()
     else:
-        for path in sorted(target.rglob("*"), reverse=True):
-            path.unlink() if path.is_file() else path.rmdir()
-        target.rmdir()
+        shutil.rmtree(target)
     assert run_main(iteration, reference) == 2
     assert "second-case" in capsys.readouterr().err
 
@@ -140,7 +139,7 @@ def test_exits_2_on_a_malformed_reference(tmp_path: Path) -> None:
     assert run_main(write_iteration(tmp_path), reference) == 2
 
 
-def test_shipped_reference_names_every_case_in_the_eval_set() -> None:
+def test_shipped_reference_has_one_entry_per_eval_case() -> None:
     evals_dir = Path(__file__).resolve().parent.parent / "evals"
     reference = json.loads((evals_dir / "reference.json").read_text(encoding="utf-8"))
     evals = json.loads((evals_dir / "evals.json").read_text(encoding="utf-8"))
