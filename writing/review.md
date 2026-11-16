@@ -7,7 +7,7 @@ The writer of a draft reads what they meant, not what they wrote. The checker an
 | Pass | Runs when | Reads | Who reads |
 |---|---|---|---|
 | Claim support | The draft cites sources and, where code runs, `verify.py --draft` reports no errors | The claim and quote pairs from the sources file | router-worker for more than three pairs; the main chat for three or fewer |
-| Cold reader | Reports, essays and applications over 400 words; any explainer, and anything else for a reader outside the field, whatever its length | The draft and a one-paragraph description of its reader | router-scout |
+| Cold reader | Reports, essays and applications over 400 words, and any explainer whatever its length | The draft and a one-paragraph description of its reader | router-scout |
 | Examiner | A rubric, marking scheme or person specification for the draft is in the working folder or the request, whatever the register | The draft and the rubric | router-expert |
 
 A subagent starts with about 16,000 tokens of context before it reads the draft, so a pass runs only where it can find more than it costs. Below 400 words the writer can hold a report section whole, and three pairs are quicker to judge in place than to brief. The cold reader runs on the smallest tier because it is meant to know less than the writer. Messages, lab book entries and posts skip claim support and the cold reader unless the student asks: they are short, and the student knows the reader. A lab book marked against a rubric still gets the examiner. Run the passes after the mechanical checks are clean and before delivery. They read different inputs and change nothing, so run them at once.
