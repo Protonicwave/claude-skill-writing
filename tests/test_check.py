@@ -526,6 +526,14 @@ def test_cli_rejects_a_word_limit_below_one(tmp_path: Path, limit: str) -> None:
     assert stopped.value.code == 2
 
 
+def test_cli_word_limit_error_says_what_it_expected(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit):
+        main([str(tmp_path / "draft.md"), "--max-words", "many"])
+    assert "expected a whole number above 0, got many" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("options", [["--max-words", "5"], ["--inputs", "notes.md"]])
 def test_cli_outline_refuses_check_options(tmp_path: Path, options: list[str]) -> None:
     with pytest.raises(SystemExit) as stopped:
@@ -596,6 +604,33 @@ def test_cli_missing_input_exits_2_before_checking(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert str(missing) in captured.err
+
+
+def test_cli_undecodable_input_exits_2_naming_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    draft = tmp_path / "draft.md"
+    draft.write_text("Peaks at 7.1 V.", encoding="utf-8")
+    spreadsheet = tmp_path / "results.xlsx"
+    spreadsheet.write_bytes(b"PK\x03\x04\xff\xfe\x00binary")
+    assert main([str(draft), "--inputs", str(spreadsheet)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert str(spreadsheet) in captured.err
+
+
+def test_cli_oversized_input_is_not_called_the_draft(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("check.MAX_DRAFT_CHARACTERS", 20)
+    draft = tmp_path / "draft.md"
+    draft.write_text("Peaks at 7.1 V.", encoding="utf-8")
+    notes = tmp_path / "notes.md"
+    notes.write_text("Peaks at 7.1 V and many more besides.", encoding="utf-8")
+    assert main([str(draft), "--inputs", str(notes)]) == 2
+    err = capsys.readouterr().err
+    assert str(notes) in err
+    assert "draft" not in err.replace(str(tmp_path), "")
 
 
 def test_cli_refuses_standard_input_as_an_input(tmp_path: Path) -> None:

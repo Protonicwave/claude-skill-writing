@@ -617,25 +617,23 @@ def format_for(path: str) -> Format:
     }.get(suffix, Format.PLAIN)
 
 
-def read_draft(path: str) -> str:
+def read_capped(path: str) -> str:
+    """The text of the draft or an input file; `-` reads standard input."""
     if path == "-":
         text = sys.stdin.read(MAX_DRAFT_CHARACTERS + 1)
     else:
         with Path(path).open(encoding="utf-8") as handle:
             text = handle.read(MAX_DRAFT_CHARACTERS + 1)
     if len(text) > MAX_DRAFT_CHARACTERS:
-        raise ValueError(
-            f"draft is over {MAX_DRAFT_CHARACTERS} characters; check it in parts"
-        )
+        raise ValueError(f"over {MAX_DRAFT_CHARACTERS} characters; check it in parts")
     return text
 
 
 def _positive_int(value: str) -> int:
-    number = int(value)
-    if number < 1:
+    if not (value.isascii() and value.isdigit() and int(value) > 0):
         message = f"expected a whole number above 0, got {value}"
         raise argparse.ArgumentTypeError(message)
-    return number
+    return int(value)
 
 
 def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
@@ -689,7 +687,7 @@ def main(argv: list[str] | None = None) -> int:
     texts = []
     for path in [args.path, *(args.inputs or ())]:
         try:
-            texts.append(read_draft(path))
+            texts.append(read_capped(path))
         except (OSError, UnicodeDecodeError, ValueError) as err:
             print(f"cannot read {path}: {err}", file=sys.stderr)
             return 2
