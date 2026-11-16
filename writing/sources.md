@@ -48,13 +48,13 @@ These go in the log by hand with the URL, the retrieval date, the edition or ver
 
 ## Checking with verify.py
 
-In Claude Code, put every paper in a JSON Lines file beside the draft, one source per line, written as the draft cites it:
+In Claude Code, settle the draft first: run `check.py` alone until it reports no errors, the word limit included. Then write every paper with the Write tool into a JSON Lines file beside the draft, one source per line, written as the draft cites it:
 
 ```
 {"key": "Feynman1982", "id": "10.1007/BF02650179", "title": "Simulating physics with computers", "authors": ["Feynman"], "year": 1982, "volume": "21", "pages": "467-488", "evidence": [{"claim": "the sentence in the draft", "quote": "the passage, word for word", "text": "feynman.html"}]}
 ```
 
-`id` is a DOI or arXiv ID (add `v{n}` to cite one arXiv version). `authors` lists surnames in order; a final `"et al."` stands for the rest, and `[]` cites a work with no personal authors. `volume`, `pages` and `text` are optional. `text` names a saved full text, plain or HTML, in the same folder as the sources file; save PDFs as HTML or text first. Then run, with a 10-minute command timeout:
+`id` is a DOI or arXiv ID (add `v{n}` to cite one arXiv version). `authors` lists surnames in order; a final `"et al."` stands for the rest, and `[]` cites a work with no personal authors. `volume`, `pages` and `text` are optional. `claim` is the citing sentence copied from the settled draft, with any backslash doubled as JSON requires. `text` names a saved full text, plain or HTML, in the same folder as the sources file; save PDFs as HTML or UTF-8 text first (`pdftotext -enc UTF-8 paper.pdf paper.txt`), because the checker and the verifier read UTF-8 only. Then run, with a 10-minute command timeout:
 
 ```
 python -I "<this skill's directory>/scripts/verify.py" sources.jsonl > references-log.md
@@ -84,6 +84,8 @@ python -I "<this skill's directory>/scripts/check.py" draft.tex --format latex -
 ```
 
 `;` runs the audit even when the checker finds errors, so the exit status is the verifier's alone: read the checker's output for its errors.
+
+Run it once per round of edits, not after each edit. An edit that rewords a citing sentence changes its `claim` in the same turn. Over the word limit, the error gives the count: cut the excess and a few words more in one edit. Under the limit the checker prints no count, and none is needed.
 
 It appends a "Draft audit" section to the log, each finding with its line in the draft. It reads LaTeX `\cite`-family commands, with options and natbib forms, and Pandoc `[@key]` citations.
 
