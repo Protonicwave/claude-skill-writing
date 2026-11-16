@@ -1,11 +1,11 @@
 {
-  "max_extra_tokens": 385000,
+  "max_extra_tokens": 400000,
   "cases": {
     "cited-paragraph": {
       "total": 7,
       "with_skill": {
         "passed": 7,
-        "tokens": 81084
+        "tokens": 118567
       },
       "without_skill": {
         "passed": 5,
@@ -16,7 +16,7 @@
       "total": 6,
       "with_skill": {
         "passed": 6,
-        "tokens": 62651
+        "tokens": 65637
       },
       "without_skill": {
         "passed": 5,
@@ -104,7 +104,7 @@
       "total": 8,
       "with_skill": {
         "passed": 8,
-        "tokens": 209328
+        "tokens": 209430
       },
       "without_skill": {
         "passed": 5,
@@ -137,7 +137,7 @@
       "total": 5,
       "with_skill": {
         "passed": 5,
-        "tokens": 73802
+        "tokens": 79667
       },
       "without_skill": {
         "passed": 5,
