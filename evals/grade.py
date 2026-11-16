@@ -15,6 +15,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,17 +27,11 @@ DELIVERABLE = Path("outputs") / "deliverable.md"
 AUTO_PREFIX = "auto: "
 MAX_INPUT_BYTES = 1_000_000
 CHECKER_TIMEOUT_SECONDS = 60
-# Integers this small are list positions, counts and ordinals far more often
-# than invented results, so they are not traced back to the inputs.
-SMALL_INTEGER_LIMIT = 10
+CHECKER_ERROR = ": error ["
+CHECKER_UNSOURCED_NUMBER = ": warning [number-source] "
 MAX_LISTED_ITEMS = 10
 
 WORD = re.compile(r"[A-Za-z0-9][\w'\u2019-]*")
-# The skill stamps markers and logs with the date it checked a source, so
-# ISO dates are written at run time and cannot come from the inputs.
-ISO_DATE = re.compile(r"\b[0-9]{4}-[0-9]{2}-[0-9]{2}\b")
-NUMBER = re.compile(r"[0-9]+(?:[.,][0-9]+)*")
-THOUSANDS = re.compile(r"[0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?")
 HASHTAG = re.compile(r"(?<![\w#&])#[A-Za-z]\w*")
 SENTENCE_END = re.compile(r"[.!?]+[\"')\]]*(?=\s|$)")
 NOT_PROSE_BLOCK = re.compile(r"^\s*(?:#|[-*+]\s|\d+[.)]\s|>|```|\|)")
@@ -207,18 +202,6 @@ def load_cases(path: Path) -> dict[int, EvalCase]:
     return cases
 
 
-def _numbers(text: str) -> set[str]:
-    found = set()
-    for match in NUMBER.finditer(ISO_DATE.sub(" ", text)):
-        number = match.group()
-        if THOUSANDS.fullmatch(number):
-            number = number.replace(",", "")
-        if number.isdigit() and int(number) <= SMALL_INTEGER_LIMIT:
-            continue
-        found.add(number)
-    return found
-
-
 def _is_one_sentence(block: str) -> bool:
     return len(SENTENCE_END.findall(block.strip())) <= 1
 
@@ -233,11 +216,11 @@ def _phrases_found(phrases: tuple[str, ...], text: str) -> list[str]:
     return [phrase for phrase in phrases if phrase.casefold() in lowered]
 
 
-def _checker_errors(deliverable: str, fmt: FormatName) -> list[str]:
+def _checker_output(deliverable: str, *options: str) -> list[str]:
     # UTF-8 mode, because check.py reads standard input in the console's code page.
     try:
         completed = subprocess.run(  # noqa: S603  fixed interpreter and script, no shell
-            [sys.executable, "-I", "-X", "utf8", str(CHECKER), "-", "--format", fmt],
+            [sys.executable, "-I", "-X", "utf8", str(CHECKER), "-", *options],
             input=deliverable,
             capture_output=True,
             text=True,
@@ -253,7 +236,26 @@ def _checker_errors(deliverable: str, fmt: FormatName) -> list[str]:
         raise CheckerFailedError(
             f"check.py exited {completed.returncode}: {completed.stderr}"
         )
-    return [line for line in completed.stdout.splitlines() if ": error [" in line]
+    return completed.stdout.splitlines()
+
+
+def _checker_errors(deliverable: str, fmt: FormatName) -> list[str]:
+    lines = _checker_output(deliverable, "--format", fmt)
+    return [line for line in lines if CHECKER_ERROR in line]
+
+
+def _unsourced_numbers(deliverable: str, input_text: str) -> list[str]:
+    with tempfile.TemporaryDirectory() as scratch:
+        inputs = Path(scratch) / "inputs.txt"
+        inputs.write_text(input_text, encoding="utf-8")
+        lines = _checker_output(deliverable, "--inputs", str(inputs))
+    return sorted(
+        {
+            line.split(CHECKER_UNSOURCED_NUMBER, 1)[1].split()[0]
+            for line in lines
+            if CHECKER_UNSOURCED_NUMBER in line
+        }
+    )
 
 
 def _listed(items: list[str]) -> str:
@@ -299,7 +301,7 @@ def _verdict(check: Check, deliverable: str, input_text: str) -> tuple[bool, str
             count = len(WORD.findall(deliverable))
             verdict = count <= limit, f"{count} words"
         case NumbersFromInputs():
-            unsourced = sorted(_numbers(deliverable) - _numbers(input_text))
+            unsourced = _unsourced_numbers(deliverable, input_text)
             verdict = (
                 not unsourced,
                 f"not in prompt or input files: {_listed(unsourced)}",
