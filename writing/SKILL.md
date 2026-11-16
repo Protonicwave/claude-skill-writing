@@ -44,7 +44,7 @@ A named tone ("warmer", "shorter", "more formal") also needs `voice.md`. No tone
 
 ## Process
 
-1. Ask for what is missing rather than guess. Over about 800 words, agree an outline first: one claim sentence per paragraph.
+1. Ask for what is missing. Over about 800 words, agree an outline first: one claim sentence per paragraph.
 2. Draft in the register.
 3. Check the draft file with `scripts/check.py`, in one command:
 
@@ -53,14 +53,14 @@ A named tone ("warmer", "shorter", "more formal") also needs `voice.md`. No tone
    ```
 
    `--max-words` takes any limit the request or rubric sets; `--inputs` takes every file the facts came from. A cited draft chains `scripts/verify.py` into the same command, as `sources.md` shows. Fix every error. Judge each warning: an unknown number is derived and said so, or it goes; a flagged word in its technical sense stays. If it warns, `tells.md` says what to write instead. Over a few paragraphs, `--outline` prints each first sentence; together they should state the argument. Without code execution, apply `tells.md` by hand.
-4. Have the draft read with fresh eyes as `review.md` says; settle each finding by changing the text or showing it wrong. Rerun the check after the last revision.
+4. If the draft cites, has a rubric, is an explainer or runs over 400 words, run the passes `review.md` gives and settle each finding by changing the text or showing it wrong. Then rerun step 3's command.
 5. Before delivering, look for what the checker cannot see:
    - a tone change that puts blame on a person;
    - a claim, skill or event the notes do not contain;
    - agreement with a value or model stated without its uncertainty;
    - a caveat of the source dropped from a summary;
    - one-sentence paragraphs in a post.
-6. Deliver in the requested format, followed only by any open markers, the verification log's location and judgement calls for the student. No summary.
+6. Deliver in the requested format, followed only by open markers, the verification log's location and judgement calls for the student.
 
 ## Editing the student's text
 

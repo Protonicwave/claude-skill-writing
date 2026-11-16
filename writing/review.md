@@ -4,13 +4,13 @@ The writer of a draft reads what they meant, not what they wrote. The checker an
 
 ## Which passes run
 
-| Pass | Runs when | Reads | Tier |
+| Pass | Runs when | Reads | Who reads |
 |---|---|---|---|
-| Claim support | The draft cites sources and, where code runs, `verify.py --draft` reports no errors | The claim and quote pairs from the sources file | router-worker |
-| Cold reader | Reports, essays, explainers and applications over about 150 words; anything for a reader outside the field | The draft and a one-paragraph description of its reader | router-worker |
+| Claim support | The draft cites sources and, where code runs, `verify.py --draft` reports no errors | The claim and quote pairs from the sources file | router-worker for more than three pairs; the main chat for three or fewer |
+| Cold reader | Reports, essays and applications over 400 words; any explainer, and anything else for a reader outside the field, whatever its length | The draft and a one-paragraph description of its reader | router-scout |
 | Examiner | A rubric, marking scheme or person specification for the draft is in the working folder or the request, whatever the register | The draft and the rubric | router-expert |
 
-Messages, lab book entries and posts skip claim support and the cold reader unless the student asks: they are short, and the student knows the reader. A lab book marked against a rubric still gets the examiner. Run the passes after the mechanical checks are clean and before delivery. They read different inputs and change nothing, so run them at once.
+A subagent starts with about 16,000 tokens of context before it reads the draft, so a pass runs only where it can find more than it costs. Below 400 words the writer can hold a report section whole, and three pairs are quicker to judge in place than to brief. The cold reader runs on the smallest tier because it is meant to know less than the writer. Messages, lab book entries and posts skip claim support and the cold reader unless the student asks: they are short, and the student knows the reader. A lab book marked against a rubric still gets the examiner. Run the passes after the mechanical checks are clean and before delivery. They read different inputs and change nothing, so run them at once.
 
 ## The briefs
 
@@ -19,6 +19,8 @@ Each brief follows the model-router template. Fill the angle-bracketed parts and
 ### Claim support
 
 Before spawning, check that each `claim` in the sources file is the sentence as the draft now words it; edits after the sources were written leave stale claims. The reviewer reads the claim and quote pairs and nothing else, so it judges the quote against the claim and cannot fill a gap from the surrounding argument.
+
+With three pairs or fewer, judge them in the main chat instead. Set the pairs out as a table, then judge each row by the brief's constraints, from the quote's words alone and without looking back at the draft, before reading the next row. Give each the verdict the brief asks for.
 
 ```
 Goal: every claim in <sources file> has a verdict on whether its quotes establish it as worded.
@@ -70,7 +72,7 @@ A reviewer's finding is evidence about the text, so it is settled by changing th
 - **An examiner's change that needs no new information.** Make it.
 - **An examiner's change that needs data, results or sources the student has not supplied.** Do not invent them to reach a band. Add `[DATA NEEDED: what]` where the gap is, or list the change in the delivery note for the student.
 
-Fixes tend to add words: a gloss, a qualifier, a step of reasoning. Pay for them by cutting elsewhere. Count the words again: the draft must end within any limit the request or rubric sets, and without one, no more than a tenth longer than before the passes. A fix that cannot fit goes in the delivery note instead. After the changes, run `check.py` again and, if the citations changed, `verify.py --draft`. Each pass runs once per draft. Run one again only when a finding made the draft restructure, and then only that pass.
+Fixes tend to add words: a gloss, a qualifier, a step of reasoning. Pay for them by cutting elsewhere. Count the words again: the draft must end within any limit the request or rubric sets, and without one, no more than a tenth longer than before the passes. A fix that cannot fit goes in the delivery note instead. After the changes, run the check command in `SKILL.md` again with the same `--max-words` and `--inputs`, so a fix that pushed the draft past its limit or added a number shows, and, if the citations changed, `verify.py --draft`. Each pass runs once per draft. Run one again only when a finding made the draft restructure, and then only that pass.
 
 ## Without subagents
 
