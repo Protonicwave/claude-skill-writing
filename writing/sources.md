@@ -44,7 +44,7 @@ Never fall back to memory when a tool fails. In a claude.ai chat without web acc
 
 These go in the log by hand with the URL, the retrieval date, the edition or version and the passage. Confirm the passage is in the saved file by searching it for a distinctive phrase.
 
-`verify.py` cannot check a book. Find the work with `https://openlibrary.org/search.json?title={words}&author={surname}&fields=key,title,edition_count&limit=5`, then list its editions with `https://openlibrary.org/works/{key}/editions.json?limit=50`, which gives each edition's name, date, publishers and ISBN; `https://openlibrary.org/isbn/{ISBN}.json` reads one edition. The publisher's own page for the edition is a second record. Give an ISBN or page number only when a record or the copy read shows it. When the catalogue disagrees with the edition or year the student gave, report it as a mismatch (rule 6). A formula or figure cited to a book is CLAIM NOT CHECKED until its passage is read.
+`verify.py` cannot check a book. Find the work with `https://openlibrary.org/search.json?title={words}&author={surname}&fields=key,title,edition_count&limit=5`, then list its editions with `https://openlibrary.org{key}/editions.json?limit=50`, where `{key}` is the search result's `key` as given, such as `/works/OL2922155W`, which gives each edition's name, date, publishers and ISBN; `https://openlibrary.org/isbn/{ISBN}.json` reads one edition. The publisher's own page for the edition is a second record. Give an ISBN or page number only when a record or the copy read shows it. When the catalogue disagrees with the edition or year the student gave, report it as a mismatch (rule 6). A formula or figure cited to a book is CLAIM NOT CHECKED until its passage is read.
 
 ## Checking with verify.py
 
