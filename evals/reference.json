@@ -1,11 +1,11 @@
 {
-  "max_extra_tokens": 300000,
+  "max_extra_tokens": 385000,
   "cases": {
     "cited-paragraph": {
       "total": 7,
       "with_skill": {
         "passed": 6,
-        "tokens": 181877
+        "tokens": 81084
       },
       "without_skill": {
         "passed": 5,
@@ -16,7 +16,7 @@
       "total": 6,
       "with_skill": {
         "passed": 6,
-        "tokens": 70127
+        "tokens": 62651
       },
       "without_skill": {
         "passed": 5,
@@ -26,8 +26,8 @@
     "data-gap": {
       "total": 7,
       "with_skill": {
-        "passed": 6,
-        "tokens": 98398
+        "passed": 7,
+        "tokens": 53445
       },
       "without_skill": {
         "passed": 6,
@@ -37,8 +37,8 @@
     "lay-summary-limit": {
       "total": 6,
       "with_skill": {
-        "passed": 5,
-        "tokens": 114358
+        "passed": 6,
+        "tokens": 85619
       },
       "without_skill": {
         "passed": 5,
@@ -49,7 +49,7 @@
       "total": 7,
       "with_skill": {
         "passed": 7,
-        "tokens": 66254
+        "tokens": 63308
       },
       "without_skill": {
         "passed": 7,
@@ -60,7 +60,7 @@
       "total": 7,
       "with_skill": {
         "passed": 6,
-        "tokens": 53439
+        "tokens": 52305
       },
       "without_skill": {
         "passed": 6,
@@ -71,7 +71,7 @@
       "total": 6,
       "with_skill": {
         "passed": 6,
-        "tokens": 55409
+        "tokens": 50848
       },
       "without_skill": {
         "passed": 5,
@@ -82,7 +82,7 @@
       "total": 7,
       "with_skill": {
         "passed": 7,
-        "tokens": 122915
+        "tokens": 58017
       },
       "without_skill": {
         "passed": 6,
@@ -93,7 +93,7 @@
       "total": 9,
       "with_skill": {
         "passed": 9,
-        "tokens": 59182
+        "tokens": 51049
       },
       "without_skill": {
         "passed": 8,
@@ -104,7 +104,7 @@
       "total": 7,
       "with_skill": {
         "passed": 7,
-        "tokens": 199502
+        "tokens": 209328
       },
       "without_skill": {
         "passed": 4,
@@ -114,8 +114,8 @@
     "rubric-methods": {
       "total": 7,
       "with_skill": {
-        "passed": 6,
-        "tokens": 156340
+        "passed": 7,
+        "tokens": 101042
       },
       "without_skill": {
         "passed": 6,
@@ -126,7 +126,7 @@
       "total": 7,
       "with_skill": {
         "passed": 7,
-        "tokens": 57739
+        "tokens": 50792
       },
       "without_skill": {
         "passed": 6,
@@ -137,7 +137,7 @@
       "total": 5,
       "with_skill": {
         "passed": 5,
-        "tokens": 79315
+        "tokens": 73802
       },
       "without_skill": {
         "passed": 5,
