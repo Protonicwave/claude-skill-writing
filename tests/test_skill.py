@@ -11,6 +11,9 @@ SKILL_TEXT = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
 # Limits from the skill format: claude.ai rejects a skill that exceeds them.
 MAX_NAME_CHARACTERS = 64
 MAX_DESCRIPTION_CHARACTERS = 1024
+# SKILL.md is read in full on every use, so each word is paid for on every
+# request; the other files are read only when a step or register needs them.
+MAX_SKILL_MD_WORDS = 800
 
 
 def frontmatter() -> dict[str, str]:
@@ -44,6 +47,10 @@ def test_frontmatter_has_valid_name_and_description() -> None:
     assert 0 < len(fields["description"]) <= MAX_DESCRIPTION_CHARACTERS
     assert "<" not in fields["description"]
     assert ">" not in fields["description"]
+
+
+def test_skill_md_stays_within_its_word_budget() -> None:
+    assert len(SKILL_TEXT.split()) <= MAX_SKILL_MD_WORDS
 
 
 def test_every_file_skill_md_names_exists() -> None:
