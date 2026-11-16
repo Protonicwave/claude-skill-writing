@@ -28,7 +28,7 @@ A named tone ("warmer", "shorter", "more formal") also needs `voice.md`. No tone
 1. A rubric, handbook, template, word limit or supervisor's instruction outranks this skill. Read it first.
 2. Name the reader, the claim and the evidence, one sentence each.
 3. Facts come only from the student's data, notes, code and results, or from verified sources, never from memory. A gap stays visible: `[DATA NEEDED: what]`, `[CITATION NEEDED: claim]`, or the markers `sources.md` defines.
-4. When the text cites, quotes or leans on published work, read `sources.md`, and `sources-search.md` to find new sources. No reference comes from memory, and a cited draft always has a verification log.
+4. When the text cites, quotes or leans on published work, read `sources.md`, and `sources-search.md` to find new sources. A cited draft always has a verification log.
 5. A sample of the student's own writing sets the style: match its sentence length, "I" or "we", connectives and formality. Without one, read `exemplars.md` for work over about 800 words.
 
 ## Voice
@@ -52,7 +52,7 @@ A named tone ("warmer", "shorter", "more formal") also needs `voice.md`. No tone
    python -I "<this skill's directory>/scripts/check.py" <draft> --format plain|markdown|latex --max-words <limit> --inputs <notes and data files>
    ```
 
-   `--max-words` takes any limit the request or rubric sets; `--inputs` takes every file the facts came from. A cited draft chains `scripts/verify.py` into the same command, as `sources.md` shows. Fix every error. Judge each warning: an unknown number is derived and said so, or it goes; a flagged word in its technical sense stays. If it warns, `tells.md` says what to write instead. Over a few paragraphs, `--outline` prints each first sentence; together they should state the argument. Without code execution, apply `tells.md` by hand.
+   `--max-words` takes any limit the request or rubric sets; `--inputs` takes every file the facts came from, with the request saved as one. A cited draft chains `scripts/verify.py` into the same command, as `sources.md` shows. Fix every error. Judge each warning: an unknown number is derived and said so, or it goes; a flagged word in its technical sense stays. If it warns, `tells.md` says what to write instead. Over a few paragraphs, `--outline` prints each first sentence; together they should state the argument. Without code execution, apply `tells.md` by hand.
 4. If the draft cites, has a rubric, is an explainer or runs over 400 words, run the passes `review.md` gives and settle each finding by changing the text or showing it wrong. Then rerun step 3's command.
 5. Before delivering, look for what the checker cannot see:
    - a tone change that puts blame on a person;
