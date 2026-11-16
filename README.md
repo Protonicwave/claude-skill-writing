@@ -4,7 +4,7 @@ A skill for Claude that writes and edits prose people read (reports, dissertatio
 
 ## Layout
 
-- `writing/`: the skill itself. `SKILL.md` routes each request to a register in `writing/registers/` and points to the shared rules (`tells.md`, `clarity.md`, `sources.md`, `exemplars.md`), the tone dials (`voice.md`) and the fresh-context review passes (`review.md`).
+- `writing/`: the skill itself. `SKILL.md` routes each request to a register in `writing/registers/` and points to the shared rules (`tells.md`, `clarity.md`, `sources.md`, `sources-search.md`, `exemplars.md`), the tone dials (`voice.md`) and the fresh-context review passes (`review.md`).
 - `writing/scripts/check.py`: the draft checker, standard library only.
 - `writing/scripts/verify.py`: the source verifier, standard library only.
 - `install.py`: installs the skill and builds the upload zip.
