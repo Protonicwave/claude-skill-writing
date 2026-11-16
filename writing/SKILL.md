@@ -52,7 +52,7 @@ A named tone ("warmer", "shorter", "more formal") also needs `voice.md`. No tone
    python -I "<this skill's directory>/scripts/check.py" <draft> --format plain|markdown|latex --max-words <limit> --inputs <notes and data files>
    ```
 
-   `--max-words` takes any limit the request or rubric sets; `--inputs` takes every file the facts came from, with the request saved as one. A cited draft chains `scripts/verify.py` on, as `sources.md` shows. Fix every error. Judge each warning: an unknown number is derived and said so, or it goes; a flagged word in its technical sense stays. If it warns, `tells.md` says what to write instead. Over a few paragraphs, run `--outline` alone: it prints each first sentence, which together should state the argument. Without code execution, apply `tells.md` by hand.
+   `--max-words` takes any limit the request or rubric sets; `--inputs` takes every file the facts came from, with the request saved as one. A cited draft chains `scripts/verify.py` on, as `sources.md` shows. Fix every error. Judge each warning: an unknown number is derived and said so, or it goes; a flagged word in its technical sense stays. For style warnings, `tells.md` says what to write instead. Over a few paragraphs, run `--outline` alone: it prints each first sentence, which together should state the argument. Without code execution, apply `tells.md` by hand.
 4. If the draft cites, has a rubric, is an explainer or runs over 400 words, run the passes `review.md` gives and settle each finding by changing the text or showing it wrong. Then rerun step 3's command.
 5. Before delivering, look for what the checker cannot see:
    - a tone change that puts blame on a person;
