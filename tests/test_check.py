@@ -10,6 +10,7 @@ from check import (
     main,
     outline,
     split_sentences,
+    unsourced_number_issues,
     word_limit_issue,
 )
 
@@ -525,7 +526,79 @@ def test_cli_rejects_a_word_limit_below_one(tmp_path: Path, limit: str) -> None:
     assert stopped.value.code == 2
 
 
-def test_cli_outline_refuses_a_word_limit(tmp_path: Path) -> None:
+@pytest.mark.parametrize("options", [["--max-words", "5"], ["--inputs", "notes.md"]])
+def test_cli_outline_refuses_check_options(tmp_path: Path, options: list[str]) -> None:
     with pytest.raises(SystemExit) as stopped:
-        main([str(tmp_path / "draft.md"), "--outline", "--max-words", "5"])
+        main([str(tmp_path / "draft.md"), "--outline", *options])
+    assert stopped.value.code == 2
+
+
+NOTES = "Peaks at 7.1 V and 12.0 V from 6000 images, 1234.5 V in total."
+
+
+@pytest.mark.parametrize(
+    ("draft", "unsourced"),
+    [
+        ("Peaks at 7.1 V and 12.0 V.", []),
+        ("Peaks at 7.2 V.", ["7.2"]),
+        ("Accuracy was 94.1%.", ["94.1"]),
+        ("On 17 November we ran 3 fits.", ["17"]),
+        ("We ran 3 fits on 10 samples.", []),
+        ("[UNVERIFIED: no record on 2026-11-11]", []),
+        ("A total of 1,234.5 V.", []),
+        ("Here 6,000 images, there 6000.", []),
+    ],
+)
+def test_numbers_absent_from_the_inputs_are_flagged(
+    draft: str, unsourced: list[str]
+) -> None:
+    issues = unsourced_number_issues(draft, NOTES)
+    assert [issue.message.split()[0] for issue in issues] == unsourced
+    assert all(issue.severity is Severity.WARNING for issue in issues)
+
+
+def test_unsourced_number_is_reported_once_per_line() -> None:
+    issues = unsourced_number_issues("Gain 94.1 then 94.1.\nAgain 94.1.", NOTES)
+    assert [(issue.line, issue.rule) for issue in issues] == [
+        (1, "number-source"),
+        (2, "number-source"),
+    ]
+
+
+def test_cli_inputs_warn_without_failing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    draft = tmp_path / "draft.md"
+    draft.write_text("Peaks at 7.2 V.", encoding="utf-8")
+    notes = tmp_path / "notes.md"
+    notes.write_text("Peaks at 7.1 V.", encoding="utf-8")
+    assert main([str(draft), "--inputs", str(notes)]) == 0
+    assert f"{draft}:1: warning [number-source] 7.2" in capsys.readouterr().out
+
+
+def test_cli_inputs_read_every_file(tmp_path: Path) -> None:
+    draft = tmp_path / "draft.md"
+    draft.write_text("Peaks at 7.1 V and 12.0 V.", encoding="utf-8")
+    first, second = tmp_path / "a.md", tmp_path / "b.md"
+    first.write_text("7.1 V", encoding="utf-8")
+    second.write_text("12.0 V", encoding="utf-8")
+    issues_found = main([str(draft), "--inputs", str(first), str(second)])
+    assert issues_found == 0
+
+
+def test_cli_missing_input_exits_2_before_checking(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    draft = tmp_path / "draft.md"
+    draft.write_text(f"The fit failed{EM_DASH}badly.", encoding="utf-8")
+    missing = tmp_path / "absent.md"
+    assert main([str(draft), "--inputs", str(missing)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert str(missing) in captured.err
+
+
+def test_cli_refuses_standard_input_as_an_input(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as stopped:
+        main([str(tmp_path / "draft.md"), "--inputs", "-"])
     assert stopped.value.code == 2
