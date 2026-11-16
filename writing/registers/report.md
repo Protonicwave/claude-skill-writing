@@ -2,6 +2,8 @@
 
 Final reports, dissertations, project plans, papers, abstracts, lab reports, progress reports and literature reviews.
 
+Read with this file: `clarity.md` for terms, equations and figures; `sources.md` when the text cites; `exemplars.md` for a piece over about 800 words with no sample of the student's writing.
+
 ## The target
 
 A well-written journal paper. The PHC903 final report rubric gives 20% to writing and asks at the top band for "publishable quality" and "full compliance with journal style"; the 75% band asks the writer to be "eloquent in the expression of their subject" and to "convey ideas in a transparent, clear fashion". The analysis criterion (40%) asks for results set in context "of appropriate and published material, showing how conclusions are supported by the data". Write to that.
@@ -45,4 +47,4 @@ If a rubric, handbook or template is in the working folder, it overrides this fi
 
 ## LaTeX output
 
-When writing LaTeX: `\cite{key}` with keys from the verification log, `\ref` for figures and equations, `--` for number ranges, never `---`, and `~` before a reference (`Fig.~\ref{fig:gain}`). Use the document's existing macros and bibliography setup. Run `check.py` with `--format latex`; it strips maths, comments and citations before checking the prose.
+When writing LaTeX: `\cite{key}` with keys from the verification log, `\ref` for figures and equations, `--` for number ranges, never `---`, and `~` before a reference (`Fig.~\ref{fig:gain}`). Use the document's existing macros and bibliography setup. Run `scripts/check.py` with `--format latex`; it strips maths, comments and citations before checking the prose.

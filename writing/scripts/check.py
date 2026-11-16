@@ -1,8 +1,18 @@
 """Flag the measurable signs of machine-written prose in a draft.
 
 Usage:
-    check.py <path> [--format plain|markdown|latex] [--outline]
-    check.py - [--format ...]        read the draft from standard input
+    check.py <path> [--format plain|markdown|latex] [--max-words N]
+             [--inputs FILE ...]
+    check.py <path> --outline [--format ...]
+    check.py - [...]                 read the draft from standard input
+
+--max-words N is an error when the prose, without markup, maths or code, runs
+past N words; it is reported on the line where the limit is passed.
+
+--inputs FILE [FILE ...] is a warning for each number in the draft, maths and
+markup included, that none of the files contains. ISO dates and integers up
+to 10 are skipped, and 1,234 matches 1234. A file that cannot be read exits 2
+before any check. Put --inputs after the draft's path.
 
 --outline prints the first sentence of each body paragraph with its line,
 so the argument can be read in order, and runs no checks.
@@ -288,6 +298,15 @@ SENTENCE_BREAK = re.compile(
 )
 WORD = re.compile(r"[A-Za-z0-9][\w'\u2019-]*")
 
+# Integers this small are list positions, counts and ordinals far more often
+# than invented results, so they are not traced back to the inputs.
+SMALL_INTEGER_LIMIT = 10
+# The skill stamps markers and logs with the date it checked a source, so
+# ISO dates are written at run time and cannot come from the inputs.
+ISO_DATE = re.compile(r"\b[0-9]{4}-[0-9]{2}-[0-9]{2}\b")
+NUMBER = re.compile(r"[0-9]+(?:[.,][0-9]+)*")
+THOUSANDS = re.compile(r"[0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?")
+
 # Two or more capitals as a whole word; a plural s counts as the singular, so
 # GPUs is GPU. CO2, MHz and PhD are not whole-word capitals and never match.
 CAPITALISED_TERM = re.compile(r"(?P<open>\()?\b(?P<term>[A-Z]{2,})s?\b(?P<close>\))?")
@@ -545,6 +564,50 @@ def find_issues(text: str, fmt: Format) -> list[Issue]:
     return sorted(issues, key=lambda issue: issue.line)
 
 
+def word_limit_issue(text: str, fmt: Format, limit: int) -> Issue | None:
+    """An error on the line where the prose passes `limit` words, if it does."""
+    lines = prose_lines(text, fmt)
+    running = list(accumulate(len(WORD.findall(line.text)) for line in lines))
+    if not running or running[-1] <= limit:
+        return None
+    passed_on = lines[bisect_right(running, limit)].number
+    message = f"{running[-1]} words of prose against a limit of {limit}; cut to fit"
+    return Issue(passed_on, "word-limit", ERR, message)
+
+
+def _traceable_numbers(text: str) -> Iterator[str]:
+    for match in NUMBER.finditer(ISO_DATE.sub(" ", text)):
+        number = match.group()
+        if THOUSANDS.fullmatch(number):
+            number = number.replace(",", "")
+        if not (number.isdigit() and int(number) <= SMALL_INTEGER_LIMIT):
+            yield number
+
+
+def _without_markup(line: str, fmt: Format) -> str:
+    """The line without cite keys, labels, file names, options or URLs; maths stays."""
+    if fmt is Format.LATEX:
+        line = LATEX_COMMAND.sub(" ", LATEX_DROPPED_COMMAND.sub(" ", line))
+    elif fmt is Format.MARKDOWN:
+        line = MARKDOWN_LINK_TARGET.sub("]", line)
+    return URL.sub(" ", line)
+
+
+def unsourced_number_issues(text: str, fmt: Format, inputs_text: str) -> list[Issue]:
+    """A warning for each number in the draft, maths included, no input contains."""
+    known = set(_traceable_numbers(inputs_text))
+    unsourced = dict.fromkeys(
+        (line, number)
+        for line, raw in enumerate(text.splitlines(), start=1)
+        for number in _traceable_numbers(_without_markup(raw, fmt))
+        if number not in known
+    )
+    return [
+        Issue(line, "number-source", WARN, f"{number} appears in none of the inputs")
+        for line, number in unsourced
+    ]
+
+
 def outline(text: str, fmt: Format) -> list[tuple[int, str]]:
     """The first sentence of each body paragraph, with the line it starts on."""
     return [
@@ -563,20 +626,26 @@ def format_for(path: str) -> Format:
     }.get(suffix, Format.PLAIN)
 
 
-def read_draft(path: str) -> str:
+def read_capped(path: str) -> str:
+    """The text of the draft or an input file; `-` reads standard input."""
     if path == "-":
         text = sys.stdin.read(MAX_DRAFT_CHARACTERS + 1)
     else:
         with Path(path).open(encoding="utf-8") as handle:
             text = handle.read(MAX_DRAFT_CHARACTERS + 1)
     if len(text) > MAX_DRAFT_CHARACTERS:
-        raise ValueError(
-            f"draft is over {MAX_DRAFT_CHARACTERS} characters; check it in parts"
-        )
+        raise ValueError(f"over {MAX_DRAFT_CHARACTERS} characters; check it in parts")
     return text
 
 
-def main(argv: list[str] | None = None) -> int:
+def _positive_int(value: str) -> int:
+    if not (value.isascii() and value.isdigit() and int(value) > 0):
+        message = f"expected a whole number above 0, got {value}"
+        raise argparse.ArgumentTypeError(message)
+    return int(value)
+
+
+def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Flag the measurable signs of machine-written prose."
     )
@@ -591,13 +660,47 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="print each body paragraph's first sentence instead of checking",
     )
+    parser.add_argument(
+        "--max-words",
+        type=_positive_int,
+        metavar="N",
+        help="report an error when the prose runs past N words",
+    )
+    parser.add_argument(
+        "--inputs",
+        nargs="+",
+        metavar="FILE",
+        help="warn on each number in the draft that none of these files contains",
+    )
     args = parser.parse_args(argv)
+    if args.outline and (args.max_words or args.inputs):
+        parser.error("--outline runs no checks, so it takes no --max-words or --inputs")
+    if "-" in (args.inputs or ()):
+        parser.error("--inputs takes files; standard input is only for the draft")
+    return args
 
-    try:
-        text = read_draft(args.path)
-    except (OSError, UnicodeDecodeError, ValueError) as err:
-        print(f"cannot check {args.path}: {err}", file=sys.stderr)
-        return 2
+
+def _issues(
+    text: str, fmt: Format, max_words: int | None, inputs: list[str]
+) -> list[Issue]:
+    issues = find_issues(text, fmt)
+    if max_words and (over := word_limit_issue(text, fmt, max_words)):
+        issues.append(over)
+    if inputs:
+        issues += unsourced_number_issues(text, fmt, "\n".join(inputs))
+    return sorted(issues, key=lambda issue: issue.line)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_arguments(argv)
+    texts = []
+    for path in [args.path, *(args.inputs or ())]:
+        try:
+            texts.append(read_capped(path))
+        except (OSError, UnicodeDecodeError, ValueError) as err:
+            print(f"cannot read {path}: {err}", file=sys.stderr)
+            return 2
+    text, *inputs = texts
 
     # A console on a legacy code page cannot print every character a draft may contain.
     if isinstance(sys.stdout, io.TextIOWrapper):
@@ -608,7 +711,7 @@ def main(argv: list[str] | None = None) -> int:
         for line, sentence in outline(text, fmt):
             print(f"{name}:{line}: {sentence}")
         return 0
-    issues = find_issues(text, fmt)
+    issues = _issues(text, fmt, args.max_words, inputs)
     for issue in issues:
         print(f"{name}:{issue.line}: {issue.severity} [{issue.rule}] {issue.message}")
     return 1 if any(issue.severity is Severity.ERROR for issue in issues) else 0

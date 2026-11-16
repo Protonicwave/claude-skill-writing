@@ -29,6 +29,8 @@ max-complexity = 10
 [tool.mypy]
 strict = true
 files = ["writing/scripts", "evals", "install.py", "tests"]
+# Eval runs save their own helper scripts among their outputs.
+exclude = ["^evals/workspace/"]
 mypy_path = ["writing/scripts", "evals", "."]
 
 [tool.pytest.ini_options]

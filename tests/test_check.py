@@ -10,6 +10,8 @@ from check import (
     main,
     outline,
     split_sentences,
+    unsourced_number_issues,
+    word_limit_issue,
 )
 
 EM_DASH = "\u2014"
@@ -474,3 +476,188 @@ def test_abbreviation_defined_twice_is_reported_at_the_second_definition() -> No
 
 def test_capitals_that_are_not_roman_numerals_are_checked() -> None:
     assert [i.line for i in abbreviation_issues("The DC supply was stable.")] == [1]
+
+
+PROSE_OF_SIX_WORDS = {
+    Format.PLAIN: "Results\n\nThe gain rose above threshold.\n",
+    Format.MARKDOWN: (
+        "# Results\n\nThe gain rose [above](https://example.org/a-b-c) threshold.\n"
+        "\n```\ncode words here\n```\n<!-- a hidden note -->\n| a | b |\n"
+    ),
+    Format.LATEX: (
+        "\\section{Results}\n"
+        "The gain rose $g = 2.5\\,\\mathrm{dB}$ above threshold. % four more words\n"
+        "\\begin{equation}\nE = m c^2\n\\end{equation}\n"
+    ),
+}
+
+
+@pytest.mark.parametrize("fmt", list(Format))
+def test_word_limit_counts_prose_only(fmt: Format) -> None:
+    assert word_limit_issue(PROSE_OF_SIX_WORDS[fmt], fmt, 6) is None
+    assert word_limit_issue(PROSE_OF_SIX_WORDS[fmt], fmt, 5) is not None
+
+
+def test_word_limit_errors_on_the_line_that_passes_it() -> None:
+    issue = word_limit_issue("one two\nthree four\nfive", Format.PLAIN, 3)
+    assert issue is not None
+    assert (issue.line, issue.rule, issue.severity) == (2, "word-limit", Severity.ERROR)
+    assert issue.message.startswith("5 words of prose")
+
+
+def test_word_limit_accepts_an_empty_draft() -> None:
+    assert word_limit_issue("", Format.PLAIN, 1) is None
+
+
+def test_cli_word_limit_fails_a_long_draft(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    draft = tmp_path / "draft.md"
+    draft.write_text("The gain rose.", encoding="utf-8")
+    assert main([str(draft), "--max-words", "3"]) == 0
+    assert main([str(draft), "--max-words", "2"]) == 1
+    assert f"{draft}:1: error [word-limit] 3 words" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("limit", ["0", "-5", "many"])
+def test_cli_rejects_a_word_limit_below_one(tmp_path: Path, limit: str) -> None:
+    with pytest.raises(SystemExit) as stopped:
+        main([str(tmp_path / "draft.md"), "--max-words", limit])
+    assert stopped.value.code == 2
+
+
+def test_cli_word_limit_error_says_what_it_expected(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit):
+        main([str(tmp_path / "draft.md"), "--max-words", "many"])
+    assert "expected a whole number above 0, got many" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("options", [["--max-words", "5"], ["--inputs", "notes.md"]])
+def test_cli_outline_refuses_check_options(tmp_path: Path, options: list[str]) -> None:
+    with pytest.raises(SystemExit) as stopped:
+        main([str(tmp_path / "draft.md"), "--outline", *options])
+    assert stopped.value.code == 2
+
+
+NOTES = "Peaks at 7.1 V and 12.0 V from 6000 images, 1234.5 V in total."
+
+
+@pytest.mark.parametrize(
+    ("draft", "unsourced"),
+    [
+        ("Peaks at 7.1 V and 12.0 V.", []),
+        ("Peaks at 7.2 V.", ["7.2"]),
+        ("Accuracy was 94.1%.", ["94.1"]),
+        ("On 17 November we ran 3 fits.", ["17"]),
+        ("We ran 3 fits on 10 samples.", []),
+        ("[UNVERIFIED: no record on 2026-11-11]", []),
+        ("A total of 1,234.5 V.", []),
+        ("Here 6,000 images, there 6000.", []),
+    ],
+)
+def test_numbers_absent_from_the_inputs_are_flagged(
+    draft: str, unsourced: list[str]
+) -> None:
+    issues = unsourced_number_issues(draft, Format.PLAIN, NOTES)
+    assert [issue.message.split()[0] for issue in issues] == unsourced
+    assert all(issue.severity is Severity.WARNING for issue in issues)
+
+
+def test_unsourced_number_is_reported_once_per_line() -> None:
+    issues = unsourced_number_issues(
+        "Gain 94.1 then 94.1.\nAgain 94.1.", Format.PLAIN, NOTES
+    )
+    assert [(issue.line, issue.rule) for issue in issues] == [
+        (1, "number-source"),
+        (2, "number-source"),
+    ]
+
+
+def test_cli_inputs_warn_without_failing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    draft = tmp_path / "draft.md"
+    draft.write_text("Peaks at 7.2 V.", encoding="utf-8")
+    notes = tmp_path / "notes.md"
+    notes.write_text("Peaks at 7.1 V.", encoding="utf-8")
+    assert main([str(draft), "--inputs", str(notes)]) == 0
+    assert f"{draft}:1: warning [number-source] 7.2" in capsys.readouterr().out
+
+
+def test_cli_inputs_read_every_file(tmp_path: Path) -> None:
+    draft = tmp_path / "draft.md"
+    draft.write_text("Peaks at 7.1 V and 12.0 V.", encoding="utf-8")
+    first, second = tmp_path / "a.md", tmp_path / "b.md"
+    first.write_text("7.1 V", encoding="utf-8")
+    second.write_text("12.0 V", encoding="utf-8")
+    issues_found = main([str(draft), "--inputs", str(first), str(second)])
+    assert issues_found == 0
+
+
+def test_cli_missing_input_exits_2_before_checking(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    draft = tmp_path / "draft.md"
+    draft.write_text(f"The fit failed{EM_DASH}badly.", encoding="utf-8")
+    missing = tmp_path / "absent.md"
+    assert main([str(draft), "--inputs", str(missing)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert str(missing) in captured.err
+
+
+def test_cli_undecodable_input_exits_2_naming_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    draft = tmp_path / "draft.md"
+    draft.write_text("Peaks at 7.1 V.", encoding="utf-8")
+    spreadsheet = tmp_path / "results.xlsx"
+    spreadsheet.write_bytes(b"PK\x03\x04\xff\xfe\x00binary")
+    assert main([str(draft), "--inputs", str(spreadsheet)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert str(spreadsheet) in captured.err
+
+
+def test_cli_oversized_input_is_not_called_the_draft(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("check.MAX_DRAFT_CHARACTERS", 20)
+    draft = tmp_path / "draft.md"
+    draft.write_text("Peaks at 7.1 V.", encoding="utf-8")
+    notes = tmp_path / "notes.md"
+    notes.write_text("Peaks at 7.1 V and many more besides.", encoding="utf-8")
+    assert main([str(draft), "--inputs", str(notes)]) == 2
+    err = capsys.readouterr().err
+    assert str(notes) in err
+    assert "draft" not in err.replace(str(tmp_path), "")
+
+
+@pytest.mark.parametrize(
+    ("draft", "fmt"),
+    [
+        (r"As found before~\cite{carleo2017}.", Format.LATEX),
+        (r"\includegraphics[width=0.8\textwidth]{fig12.pdf}", Format.LATEX),
+        (r"\documentclass[12pt]{article}", Format.LATEX),
+        (r"See Fig.~\ref{fig:run12}.", Format.LATEX),
+        ("See [the data](https://example.org/set/48213).", Format.MARKDOWN),
+        ("![Peaks](figures/fig12.png)", Format.MARKDOWN),
+        ("Data at https://example.org/set/48213 today.", Format.PLAIN),
+    ],
+)
+def test_numbers_in_markup_are_not_traced(draft: str, fmt: Format) -> None:
+    assert unsourced_number_issues(draft, fmt, NOTES) == []
+
+
+def test_numbers_in_latex_maths_are_still_traced() -> None:
+    maths = r"We find $m = 125.3\,\mathrm{GeV}$."
+    issues = unsourced_number_issues(maths, Format.LATEX, NOTES)
+    assert [issue.message.split()[0] for issue in issues] == ["125.3"]
+
+
+def test_cli_refuses_standard_input_as_an_input(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as stopped:
+        main([str(tmp_path / "draft.md"), "--inputs", "-"])
+    assert stopped.value.code == 2

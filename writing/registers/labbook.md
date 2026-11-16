@@ -2,6 +2,8 @@
 
 Lab book entries, research diaries and notes kept as a record of the work.
 
+No other file is needed, unless an entry cites published work (`sources.md`).
+
 ## The target
 
 A record a supervisor or examiner can audit: what was done, when, why, what came out and what happens next. It is evidence of process, so it must be accurate to what happened, including the false starts. Polish is not the point; legibility and honesty are.

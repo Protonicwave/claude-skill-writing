@@ -11,6 +11,9 @@ SKILL_TEXT = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
 # Limits from the skill format: claude.ai rejects a skill that exceeds them.
 MAX_NAME_CHARACTERS = 64
 MAX_DESCRIPTION_CHARACTERS = 1024
+# SKILL.md is read in full on every use, so each word is paid for on every
+# request; the other files are read only when a step or register needs them.
+MAX_SKILL_MD_WORDS = 800
 
 
 def frontmatter() -> dict[str, str]:
@@ -23,8 +26,8 @@ def frontmatter() -> dict[str, str]:
     return fields
 
 
-def referenced_paths() -> set[str]:
-    return set(re.findall(r"`((?:registers/|scripts/)?[\w-]+\.(?:md|py))`", SKILL_TEXT))
+def referenced_paths(text: str = SKILL_TEXT) -> set[str]:
+    return set(re.findall(r"`((?:registers/|scripts/)?[\w-]+\.(?:md|py))`", text))
 
 
 def shipped_files() -> set[str]:
@@ -46,8 +49,23 @@ def test_frontmatter_has_valid_name_and_description() -> None:
     assert ">" not in fields["description"]
 
 
+def test_skill_md_stays_within_its_word_budget() -> None:
+    assert len(SKILL_TEXT.split()) <= MAX_SKILL_MD_WORDS
+
+
 def test_every_file_skill_md_names_exists() -> None:
     missing = {path for path in referenced_paths() if not (SKILL_DIR / path).is_file()}
+    assert missing == set()
+
+
+@pytest.mark.parametrize(
+    "path",
+    sorted((SKILL_DIR / "registers").glob("*.md")),
+    ids=lambda path: path.name,
+)
+def test_every_file_a_register_names_exists(path: Path) -> None:
+    named = referenced_paths(path.read_text(encoding="utf-8"))
+    missing = {name for name in named if not (SKILL_DIR / name).is_file()}
     assert missing == set()
 
 

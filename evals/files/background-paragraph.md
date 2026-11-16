@@ -1,0 +1,1 @@
+In the free-electron model the conduction electrons fill states up to the Fermi energy, E_F = (hbar^2 / 2m)(3 pi^2 n)^(2/3), where n is the electron number density. For copper, with one conduction electron per atom, this gives E_F of about 7 eV, far above the thermal energy at room temperature.

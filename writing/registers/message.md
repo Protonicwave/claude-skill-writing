@@ -2,6 +2,8 @@
 
 Emails, Teams and Slack posts, and messages to supervisors, teammates or clients.
 
+No other file is needed, unless the request names a tone (`voice.md`).
+
 ## The target
 
 A message a busy person reads once and acts on. It sounds like the student on a good day: direct, polite, specific, and short.

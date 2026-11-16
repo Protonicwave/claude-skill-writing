@@ -15,7 +15,7 @@
       "checks": [
         {"kind": "checker_clean", "format": "latex"},
         {"kind": "contains_any", "phrases": ["\\cite"]},
-        {"kind": "max_words", "limit": 250}
+        {"kind": "max_words", "limit": 250, "format": "latex"}
       ]
     },
     {
@@ -48,7 +48,7 @@
         {"kind": "checker_clean", "format": "plain"},
         {"kind": "contains_any", "phrases": ["[DATA NEEDED"]},
         {"kind": "numbers_from_inputs"},
-        {"kind": "max_words", "limit": 320}
+        {"kind": "max_words", "limit": 320, "format": "plain"}
       ]
     },
     {
@@ -63,7 +63,7 @@
       ],
       "checks": [
         {"kind": "checker_clean", "format": "markdown"},
-        {"kind": "max_words", "limit": 200},
+        {"kind": "max_words", "limit": 200, "format": "markdown"},
         {"kind": "numbers_from_inputs"}
       ]
     },
@@ -81,7 +81,7 @@
         {"kind": "checker_clean", "format": "markdown"},
         {"kind": "numbers_from_inputs"},
         {"kind": "forbidden_phrases", "phrases": ["furthermore", "moreover", "delve", "crucial", "landscape", "showcase", "transformative"]},
-        {"kind": "max_words", "limit": 88}
+        {"kind": "max_words", "limit": 88, "format": "markdown"}
       ]
     },
     {
@@ -96,7 +96,7 @@
       ],
       "checks": [
         {"kind": "checker_clean", "format": "plain"},
-        {"kind": "max_words", "limit": 120},
+        {"kind": "max_words", "limit": 120, "format": "plain"},
         {"kind": "numbers_from_inputs"},
         {"kind": "forbidden_phrases", "phrases": ["I hope this email finds you well", "hesitate to", "sorry for any inconvenience"]}
       ]
@@ -113,7 +113,7 @@
       ],
       "checks": [
         {"kind": "checker_clean", "format": "plain"},
-        {"kind": "max_words", "limit": 100},
+        {"kind": "max_words", "limit": 100, "format": "plain"},
         {"kind": "numbers_from_inputs"}
       ]
     },
@@ -129,7 +129,7 @@
       ],
       "checks": [
         {"kind": "checker_clean", "format": "plain"},
-        {"kind": "max_words", "limit": 400},
+        {"kind": "max_words", "limit": 400, "format": "plain"},
         {"kind": "numbers_from_inputs"},
         {"kind": "forbidden_phrases", "phrases": ["I am writing to express", "passionate", "great fit", "dynamic"]}
       ]
@@ -146,11 +146,77 @@
       ],
       "checks": [
         {"kind": "checker_clean", "format": "markdown"},
-        {"kind": "max_words", "limit": 250},
+        {"kind": "max_words", "limit": 250, "format": "markdown"},
         {"kind": "numbers_from_inputs"},
         {"kind": "max_hashtags", "limit": 3},
         {"kind": "max_one_sentence_paragraph_share", "share": 0.5},
         {"kind": "forbidden_phrases", "phrases": ["thrilled", "excited to announce", "humbled", "journey"]}
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "Write the literature review section for my dissertation from my reading notes (reading-notes.md).",
+      "expected_output": "About 400 words of LaTeX that groups the four papers by idea, cites each with \\cite, ends on the gap the dissertation fills, and checks or marks the student's unchecked claims.",
+      "files": ["files/reading-notes.md"],
+      "expectations": [
+        "Every figure or method attributed to a paper is supported by a passage the run saved, or carries a marker saying it was not checked",
+        "The 0.1% critical-temperature figure and the convolutional network for Carleo and Troyer each appear only with a supporting passage, carry a marker, or are left out",
+        "The review groups the work by idea rather than giving one paper per paragraph, and ends on the gap the dissertation fills",
+        "The sources and how each claim was checked are saved alongside the deliverable, so a reader can trace every citation"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "latex"},
+        {"kind": "contains_any", "phrases": ["\\cite"]},
+        {"kind": "max_words", "limit": 500, "format": "latex"}
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "Write the methods section of my project report from methods-notes.md. It's marked against rubric.md, so make sure it gets full marks. Plain text I can paste into Word.",
+      "expected_output": "Past-tense prose in the first person plural, under 300 words, that states the split, seed, versions and bootstrap procedure, marks the missing scikit-learn and NumPy versions, and reports no result.",
+      "files": ["files/methods-notes.md", "files/rubric.md"],
+      "expectations": [
+        "The missing scikit-learn and NumPy versions are marked as missing rather than invented or silently dropped",
+        "The section is continuous prose in the past tense and the first person plural, with no bullet points or sub-headings",
+        "The seed, the 70/15/15 split and the bootstrap procedure for the accuracy uncertainty are all stated"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "plain"},
+        {"kind": "max_words", "limit": 300, "format": "plain"},
+        {"kind": "numbers_from_inputs"},
+        {"kind": "forbidden_phrases", "phrases": ["94.1"]}
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "Turn my notes (outage-notes.md) into this week's reflection for my lab book. Make it sound like me, here's one I wrote last term: writing-sample.md.",
+      "expected_output": "A short first-person reflection in the sample's voice that keeps every fact in the notes, adds none, and ends on next week's work.",
+      "files": ["files/outage-notes.md", "files/writing-sample.md"],
+      "expectations": [
+        "It is in the first person singular with contractions and a mix of short and long sentences, as the sample is, not in a more formal or more uniform voice",
+        "Every fact in the notes is kept and nothing is added: no cause, figure or feeling the notes lack",
+        "It ends on the next step, as the sample does, not on a summary of the lesson"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "plain"},
+        {"kind": "max_words", "limit": 220, "format": "plain"},
+        {"kind": "numbers_from_inputs"},
+        {"kind": "forbidden_phrases", "phrases": ["journey", "valuable lesson", "silver lining", "in conclusion"]}
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "Add a citation to Kittel's Introduction to Solid State Physics for the Fermi energy formula in my background paragraph (background-paragraph.md), and give me the reference list entry in APS style. I think it's the 7th edition from 2004, chapter 6.",
+      "expected_output": "The paragraph with the citation on the formula, and an APS entry whose edition, year and publisher come from a named catalogue record or carry a marker, with the student told that the 7th edition and 2004 were not confirmed.",
+      "files": ["files/background-paragraph.md"],
+      "expectations": [
+        "The entry's edition, year and publisher either come from a catalogue or publisher record the run names, or carry a marker saying they were not checked; '7th edition, 2004' is not repeated unchecked",
+        "No DOI, ISBN or page number is given that a named record does not support",
+        "The student's two sentences are kept with their meaning unchanged, and the citation sits on the formula"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "markdown"},
+        {"kind": "contains_any", "phrases": ["Kittel"]}
       ]
     }
   ]

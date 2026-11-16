@@ -15,6 +15,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,17 +27,11 @@ DELIVERABLE = Path("outputs") / "deliverable.md"
 AUTO_PREFIX = "auto: "
 MAX_INPUT_BYTES = 1_000_000
 CHECKER_TIMEOUT_SECONDS = 60
-# Integers this small are list positions, counts and ordinals far more often
-# than invented results, so they are not traced back to the inputs.
-SMALL_INTEGER_LIMIT = 10
+CHECKER_ERROR = ": error ["
+CHECKER_UNSOURCED_NUMBER = ": warning [number-source] "
+CHECKER_WORD_LIMIT = ": error [word-limit] "
 MAX_LISTED_ITEMS = 10
 
-WORD = re.compile(r"[A-Za-z0-9][\w'\u2019-]*")
-# The skill stamps markers and logs with the date it checked a source, so
-# ISO dates are written at run time and cannot come from the inputs.
-ISO_DATE = re.compile(r"\b[0-9]{4}-[0-9]{2}-[0-9]{2}\b")
-NUMBER = re.compile(r"[0-9]+(?:[.,][0-9]+)*")
-THOUSANDS = re.compile(r"[0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?")
 HASHTAG = re.compile(r"(?<![\w#&])#[A-Za-z]\w*")
 SENTENCE_END = re.compile(r"[.!?]+[\"')\]]*(?=\s|$)")
 NOT_PROSE_BLOCK = re.compile(r"^\s*(?:#|[-*+]\s|\d+[.)]\s|>|```|\|)")
@@ -52,6 +47,7 @@ class CheckerClean:
 @dataclass(frozen=True, slots=True)
 class MaxWords:
     limit: int
+    format: FormatName
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,7 +142,7 @@ def _format_name(spec: Mapping[str, object]) -> FormatName:
 
 CHECK_PARSERS: dict[str, Callable[[Mapping[str, object]], Check]] = {
     "checker_clean": lambda spec: CheckerClean(_format_name(spec)),
-    "max_words": lambda spec: MaxWords(_field(spec, "limit", int)),
+    "max_words": lambda spec: MaxWords(_field(spec, "limit", int), _format_name(spec)),
     "numbers_from_inputs": lambda spec: NumbersFromInputs(),
     "forbidden_phrases": lambda spec: ForbiddenPhrases(_strings(spec, "phrases")),
     "contains_any": lambda spec: ContainsAny(_strings(spec, "phrases")),
@@ -167,7 +163,8 @@ def _parse_check(spec: object) -> Check:
     return parser(spec)
 
 
-def _read_text(path: Path) -> str:
+def read_capped_text(path: Path) -> str:
+    """The UTF-8 text of an eval file; ValueError when it is over MAX_INPUT_BYTES."""
     if path.stat().st_size > MAX_INPUT_BYTES:
         raise ValueError(f"{path} is larger than {MAX_INPUT_BYTES} bytes")
     return path.read_text(encoding="utf-8")
@@ -183,7 +180,7 @@ def _parse_case(record: object, files_root: Path) -> EvalCase:
         path = files_root / name
         if not path.is_file():
             raise ValueError(f"input file {path} does not exist")
-        texts.append(_read_text(path))
+        texts.append(read_capped_text(path))
     return EvalCase(
         id=_field(record, "id", int),
         expectations=_strings(record, "expectations"),
@@ -194,7 +191,7 @@ def _parse_case(record: object, files_root: Path) -> EvalCase:
 
 def load_cases(path: Path) -> dict[int, EvalCase]:
     """Parse evals.json into cases by id; raise ValueError on any malformed field."""
-    document = json.loads(_read_text(path))
+    document = json.loads(read_capped_text(path))
     if not isinstance(document, dict):
         raise ValueError(f"expected {path} to hold a JSON object")
     _field(document, "skill_name", str)
@@ -205,18 +202,6 @@ def load_cases(path: Path) -> dict[int, EvalCase]:
             raise ValueError(f"duplicate eval id {parsed.id}")
         cases[parsed.id] = parsed
     return cases
-
-
-def _numbers(text: str) -> set[str]:
-    found = set()
-    for match in NUMBER.finditer(ISO_DATE.sub(" ", text)):
-        number = match.group()
-        if THOUSANDS.fullmatch(number):
-            number = number.replace(",", "")
-        if number.isdigit() and int(number) <= SMALL_INTEGER_LIMIT:
-            continue
-        found.add(number)
-    return found
 
 
 def _is_one_sentence(block: str) -> bool:
@@ -233,11 +218,11 @@ def _phrases_found(phrases: tuple[str, ...], text: str) -> list[str]:
     return [phrase for phrase in phrases if phrase.casefold() in lowered]
 
 
-def _checker_errors(deliverable: str, fmt: FormatName) -> list[str]:
+def _checker_output(deliverable: str, *options: str) -> list[str]:
     # UTF-8 mode, because check.py reads standard input in the console's code page.
     try:
         completed = subprocess.run(  # noqa: S603  fixed interpreter and script, no shell
-            [sys.executable, "-I", "-X", "utf8", str(CHECKER), "-", "--format", fmt],
+            [sys.executable, "-I", "-X", "utf8", str(CHECKER), "-", *options],
             input=deliverable,
             capture_output=True,
             text=True,
@@ -253,7 +238,32 @@ def _checker_errors(deliverable: str, fmt: FormatName) -> list[str]:
         raise CheckerFailedError(
             f"check.py exited {completed.returncode}: {completed.stderr}"
         )
-    return [line for line in completed.stdout.splitlines() if ": error [" in line]
+    return completed.stdout.splitlines()
+
+
+def _checker_errors(deliverable: str, fmt: FormatName) -> list[str]:
+    lines = _checker_output(deliverable, "--format", fmt)
+    return [line for line in lines if CHECKER_ERROR in line]
+
+
+def _word_limit_error(deliverable: str, fmt: FormatName, limit: int) -> str | None:
+    lines = _checker_output(deliverable, "--format", fmt, "--max-words", str(limit))
+    over = [line for line in lines if CHECKER_WORD_LIMIT in line]
+    return over[0].split(CHECKER_WORD_LIMIT, 1)[1].strip() if over else None
+
+
+def _unsourced_numbers(deliverable: str, input_text: str) -> list[str]:
+    with tempfile.TemporaryDirectory() as scratch:
+        inputs = Path(scratch) / "inputs.txt"
+        inputs.write_text(input_text, encoding="utf-8")
+        lines = _checker_output(deliverable, "--inputs", str(inputs))
+    return sorted(
+        {
+            line.split(CHECKER_UNSOURCED_NUMBER, 1)[1].split()[0]
+            for line in lines
+            if CHECKER_UNSOURCED_NUMBER in line
+        }
+    )
 
 
 def _listed(items: list[str]) -> str:
@@ -265,7 +275,7 @@ def _describe(check: Check) -> str:
     match check:
         case CheckerClean(fmt):
             description = f"check.py ({fmt}) reports no errors"
-        case MaxWords(limit):
+        case MaxWords(limit, _):
             description = f"at most {limit} words"
         case NumbersFromInputs():
             description = "every number appears in the prompt or input files"
@@ -295,11 +305,11 @@ def _verdict(check: Check, deliverable: str, input_text: str) -> tuple[bool, str
         case CheckerClean(fmt):
             errors = _checker_errors(deliverable, fmt)
             verdict = not errors, _listed(errors)
-        case MaxWords(limit):
-            count = len(WORD.findall(deliverable))
-            verdict = count <= limit, f"{count} words"
+        case MaxWords(limit, fmt):
+            over = _word_limit_error(deliverable, fmt, limit)
+            verdict = over is None, over or f"within {limit} words of prose"
         case NumbersFromInputs():
-            unsourced = sorted(_numbers(deliverable) - _numbers(input_text))
+            unsourced = _unsourced_numbers(deliverable, input_text)
             verdict = (
                 not unsourced,
                 f"not in prompt or input files: {_listed(unsourced)}",
@@ -327,7 +337,7 @@ def score(check: Check, deliverable: str, input_text: str) -> Expectation:
 def _grade_run(run_dir: Path, cases: Mapping[int, EvalCase]) -> list[Expectation]:
     """Score every check of the run's eval; a missing deliverable fails them all."""
     metadata_path = run_dir.parent / "eval_metadata.json"
-    metadata = json.loads(_read_text(metadata_path))
+    metadata = json.loads(read_capped_text(metadata_path))
     if not isinstance(metadata, dict):
         raise ValueError(f"expected {metadata_path} to hold a JSON object")
     eval_id = _field(metadata, "eval_id", int)
@@ -340,7 +350,7 @@ def _grade_run(run_dir: Path, cases: Mapping[int, EvalCase]) -> list[Expectation
     if not deliverable_path.is_file():
         missing = f"{DELIVERABLE.as_posix()} is missing"
         return [Expectation(_describe(check), False, missing) for check in case.checks]
-    deliverable = _read_text(deliverable_path)
+    deliverable = read_capped_text(deliverable_path)
     return [score(check, deliverable, case.input_text) for check in case.checks]
 
 
@@ -378,7 +388,7 @@ def _merged_grading(
 def _existing_grading(path: Path) -> dict[str, object]:
     if not path.is_file():
         return {"expectations": []}
-    existing = json.loads(_read_text(path))
+    existing = json.loads(read_capped_text(path))
     if not isinstance(existing, dict):
         raise ValueError(f"expected {path} to hold a JSON object")
     return existing

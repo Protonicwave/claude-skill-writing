@@ -2,6 +2,8 @@
 
 Lay summaries, general-audience summaries, outreach pieces and anything written for a reader outside physics or computing.
 
+Read with this file: `clarity.md` for glossing terms and the rule on analogies; `sources.md` when the text cites.
+
 ## The target
 
 An educated reader who is not a specialist finishes knowing what was done, why it was hard, what was found and why it matters, and has learnt the field's real words on the way. Durham's guidance for a 200-word general audience summary puts the trap plainly: it is not "restating your work with the technical terms removed". It is a narrative account of what the work does and why it is important.

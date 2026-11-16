@@ -1,0 +1,148 @@
+{
+  "max_extra_tokens": 385000,
+  "cases": {
+    "cited-paragraph": {
+      "total": 7,
+      "with_skill": {
+        "passed": 7,
+        "tokens": 81084
+      },
+      "without_skill": {
+        "passed": 5,
+        "tokens": 52202
+      }
+    },
+    "nonexistent-citation": {
+      "total": 6,
+      "with_skill": {
+        "passed": 6,
+        "tokens": 62651
+      },
+      "without_skill": {
+        "passed": 5,
+        "tokens": 49554
+      }
+    },
+    "data-gap": {
+      "total": 7,
+      "with_skill": {
+        "passed": 7,
+        "tokens": 53445
+      },
+      "without_skill": {
+        "passed": 6,
+        "tokens": 45716
+      }
+    },
+    "lay-summary-limit": {
+      "total": 6,
+      "with_skill": {
+        "passed": 6,
+        "tokens": 85619
+      },
+      "without_skill": {
+        "passed": 5,
+        "tokens": 47483
+      }
+    },
+    "rewrite-student-text": {
+      "total": 7,
+      "with_skill": {
+        "passed": 7,
+        "tokens": 63308
+      },
+      "without_skill": {
+        "passed": 7,
+        "tokens": 44722
+      }
+    },
+    "supervisor-email": {
+      "total": 7,
+      "with_skill": {
+        "passed": 6,
+        "tokens": 52305
+      },
+      "without_skill": {
+        "passed": 6,
+        "tokens": 43696
+      }
+    },
+    "tone-shift": {
+      "total": 6,
+      "with_skill": {
+        "passed": 6,
+        "tokens": 50848
+      },
+      "without_skill": {
+        "passed": 5,
+        "tokens": 43856
+      }
+    },
+    "cover-letter": {
+      "total": 7,
+      "with_skill": {
+        "passed": 7,
+        "tokens": 58017
+      },
+      "without_skill": {
+        "passed": 6,
+        "tokens": 46212
+      }
+    },
+    "linkedin-post": {
+      "total": 9,
+      "with_skill": {
+        "passed": 9,
+        "tokens": 51049
+      },
+      "without_skill": {
+        "passed": 8,
+        "tokens": 45407
+      }
+    },
+    "literature-review": {
+      "total": 7,
+      "with_skill": {
+        "passed": 7,
+        "tokens": 209328
+      },
+      "without_skill": {
+        "passed": 4,
+        "tokens": 74121
+      }
+    },
+    "rubric-methods": {
+      "total": 7,
+      "with_skill": {
+        "passed": 7,
+        "tokens": 101042
+      },
+      "without_skill": {
+        "passed": 6,
+        "tokens": 47240
+      }
+    },
+    "voice-match": {
+      "total": 7,
+      "with_skill": {
+        "passed": 7,
+        "tokens": 50792
+      },
+      "without_skill": {
+        "passed": 6,
+        "tokens": 45126
+      }
+    },
+    "book-citation": {
+      "total": 5,
+      "with_skill": {
+        "passed": 5,
+        "tokens": 73802
+      },
+      "without_skill": {
+        "passed": 5,
+        "tokens": 57975
+      }
+    }
+  }
+}
