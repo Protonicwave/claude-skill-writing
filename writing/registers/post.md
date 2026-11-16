@@ -2,6 +2,8 @@
 
 Blog posts, LinkedIn posts and newsletter items: writing published to a mixed audience that chooses, line by line, whether to keep reading.
 
+Read with this file: `registers/explainer.md` for glossing technical terms; `sources.md` when the post cites.
+
 ## The target
 
 A reader scrolling past who stops because the first line says something specific, and leaves knowing what was done and one thing that was found. The voice is the student talking to colleagues and friends at once: plain, specific and a little personal, never a press release.

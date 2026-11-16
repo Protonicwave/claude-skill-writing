@@ -2,6 +2,8 @@
 
 Essays, reflective pieces and argued answers to a set question.
 
+Read with this file: `sources.md`, since every piece of evidence is verified; `exemplars.md` for an essay over about 800 words with no sample of the student's writing.
+
 ## The target
 
 An argument a reader can follow and disagree with. This register has the most room for narrative and for the writer's own voice, but every claim still needs its evidence.

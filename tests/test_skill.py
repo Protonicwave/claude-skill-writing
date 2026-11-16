@@ -23,8 +23,8 @@ def frontmatter() -> dict[str, str]:
     return fields
 
 
-def referenced_paths() -> set[str]:
-    return set(re.findall(r"`((?:registers/|scripts/)?[\w-]+\.(?:md|py))`", SKILL_TEXT))
+def referenced_paths(text: str = SKILL_TEXT) -> set[str]:
+    return set(re.findall(r"`((?:registers/|scripts/)?[\w-]+\.(?:md|py))`", text))
 
 
 def shipped_files() -> set[str]:
@@ -48,6 +48,17 @@ def test_frontmatter_has_valid_name_and_description() -> None:
 
 def test_every_file_skill_md_names_exists() -> None:
     missing = {path for path in referenced_paths() if not (SKILL_DIR / path).is_file()}
+    assert missing == set()
+
+
+@pytest.mark.parametrize(
+    "path",
+    sorted((SKILL_DIR / "registers").glob("*.md")),
+    ids=lambda path: path.name,
+)
+def test_every_file_a_register_names_exists(path: Path) -> None:
+    named = referenced_paths(path.read_text(encoding="utf-8"))
+    missing = {name for name in named if not (SKILL_DIR / name).is_file()}
     assert missing == set()
 
 

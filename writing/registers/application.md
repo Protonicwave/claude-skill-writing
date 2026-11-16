@@ -2,6 +2,8 @@
 
 Cover letters, personal statements and supporting statements for internships, jobs, placements, master's and PhD places, and scholarships.
 
+Read with this file: `voice.md` for the confidence dial; `sources.md` for anything said about the role beyond the advert.
+
 ## The target
 
 A selector with a list of criteria and a pile of applications. They read for evidence that the applicant meets each criterion, and they have seen every stock phrase. The letter that works reads like the student explaining, specifically and without fuss, why their record fits this role.
