@@ -43,7 +43,7 @@
         "The uncertainty on the slope is marked as missing rather than invented",
         "The contact potential is not stated as the established cause of the 2.2 V intercept",
         "The slope of 4.90 V is compared with the accepted 4.9 eV",
-        "Agreement with the accepted 4.9 eV is not claimed while the slope has no uncertainty"
+        "Neither agreement nor consistency with the accepted 4.9 eV is claimed while the slope has no uncertainty; saying the two values are numerically close is allowed"
       ],
       "checks": [
         {"kind": "checker_clean", "format": "plain"},
@@ -55,14 +55,13 @@
     {
       "id": 4,
       "prompt": "Turn my project abstract (project-abstract.md) into a lay summary for the department's public website. Maximum 200 words. Readers have no science background.",
-      "expected_output": "A summary under 200 words that a reader with no science background follows, stating the skin-tone bias and its size.",
+      "expected_output": "A summary under 200 words that a reader with no science background follows, stating the skin-tone bias and its size, and that the figures come from a simulation rather than real devices.",
       "files": ["files/project-abstract.md"],
       "expectations": [
-        "Oxygen saturation, melanin and the simulation method are explained in plain words or not named",
+        "Oxygen saturation, melanin, infrared and the simulation method are explained in plain words or not named",
         "The bias towards higher readings for darker skin is stated with at least one number from the abstract",
         "The summary opens on the problem, not on the importance of the field",
-        "The summary says its figures come from a computer simulation and have not been confirmed on real devices or people",
-        "Infrared is explained in plain words, such as light just beyond red that the eye cannot see, or not named"
+        "The summary states as a limitation that its figures come from a computer simulation, not from measurements on real devices or people"
       ],
       "checks": [
         {"kind": "checker_clean", "format": "markdown"},
@@ -159,14 +158,14 @@
     {
       "id": 10,
       "prompt": "Write the literature review section for my dissertation from my reading notes (reading-notes.md).",
-      "expected_output": "About 400 words of LaTeX that groups the four papers by idea, cites each with \\cite, ends on the gap the dissertation fills, and checks or marks the student's unchecked claims.",
+      "expected_output": "About 400 words of LaTeX that groups the four papers by idea, cites each with \\cite, ends on the gap the dissertation fills, narrowed against published work beyond the four papers, and checks or marks the student's unchecked claims.",
       "files": ["files/reading-notes.md"],
       "expectations": [
         "Every figure or method attributed to a paper is supported by a passage the run saved, or carries a marker saying it was not checked",
         "The 0.1% critical-temperature figure and the convolutional network for Carleo and Troyer each appear only with a supporting passage, carry a marker, or are left out",
         "The review groups the work by idea rather than giving one paper per paragraph, and ends on the gap the dissertation fills",
         "The sources and how each claim was checked are saved alongside the deliverable, so a reader can trace every citation",
-        "The gap claim is checked against published work beyond the four papers in the notes, and narrowed where such work bears on it rather than repeated as the notes state it"
+        "The gap claim is checked against published work beyond the four papers in the notes, and narrowed to take account of published methods that already change or replace the Monte Carlo sampler rather than repeated as the notes state it"
       ],
       "checks": [
         {"kind": "checker_clean", "format": "latex"},
@@ -177,13 +176,13 @@
     {
       "id": 11,
       "prompt": "Write the methods section of my project report from methods-notes.md. It's marked against rubric.md, so make sure it gets full marks. Plain text I can paste into Word.",
-      "expected_output": "Past-tense prose in the first person plural, under 300 words, that states the split, seed, versions and bootstrap procedure, marks the missing scikit-learn and NumPy versions, and reports no result.",
+      "expected_output": "Past-tense prose in the first person plural, under 300 words, that states the split, seed, versions and bootstrap procedure, marks the missing scikit-learn and NumPy versions, training and bootstrap seeds and bootstrap statistic, and reports no result.",
       "files": ["files/methods-notes.md", "files/rubric.md"],
       "expectations": [
         "The missing scikit-learn and NumPy versions are marked as missing rather than invented or silently dropped",
         "The section is continuous prose in the past tense and the first person plural, with no bullet points or sub-headings",
-        "The seed, the 70/15/15 split and the bootstrap procedure for the accuracy uncertainty are all stated",
-        "Each detail rubric.md requires and the notes lack is marked missing in the text: the training seed, the bootstrap resampling seed and which statistic of the bootstrap accuracies gives the uncertainty"
+        "The split seed (42), the 70/15/15 split and the bootstrap procedure for the accuracy uncertainty are all stated",
+        "Besides the library versions, each detail rubric.md requires and the notes lack is marked missing in the text: the training seed, the bootstrap resampling seed and which statistic of the bootstrap accuracies gives the uncertainty"
       ],
       "checks": [
         {"kind": "checker_clean", "format": "plain"},

@@ -35,13 +35,13 @@
       }
     },
     "lay-summary-limit": {
-      "total": 8,
+      "total": 7,
       "with_skill": {
-        "passed": 8,
+        "passed": 7,
         "tokens": 85619
       },
       "without_skill": {
-        "passed": 5,
+        "passed": 4,
         "tokens": 47483
       }
     },
