@@ -31,7 +31,7 @@ Run on 2026-11-16 (iteration 3), one run per case, with `claude-opus-5-5` as the
 
 ## What failed
 
-- Case 6, numbers from the inputs: 23 and 24. The prompt asks for Monday 16 November, which was the date of the run, so the run offered Monday 23 and Tuesday 24 November instead and said so first in its notes. The case's date is now in the past and will keep drawing this.
+- Case 6, numbers from the inputs: 23 and 24. The prompt asks for Monday 16 November, which was the date of the run, so the run offered Monday 23 and Tuesday 24 November instead and said so first in its notes. The case's date is now in the past and will keep drawing this. It is left unhandled: a new prompt would need a rerun of the no-skill arm, which fails the same check on the same two numbers, and would change nothing the gate measures, since both arms hold 6 of 7 on this case.
 
 ## What changed beyond the score
 
