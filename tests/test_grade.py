@@ -30,8 +30,9 @@ def scored(check: Check, deliverable: str) -> bool:
 @pytest.mark.parametrize(
     ("check", "deliverable", "expected"),
     [
-        (MaxWords(4), "One two three four.", True),
-        (MaxWords(3), "One two three four.", False),
+        (MaxWords(4, "plain"), "One two three four.", True),
+        (MaxWords(3, "plain"), "One two three four.", False),
+        (MaxWords(3, "latex"), r"\textbf{One} two \cite{key1} $x = 1$ three.", True),
         (ForbiddenPhrases(("delve",)), "We measured the peaks.", True),
         (ForbiddenPhrases(("delve",)), "We Delve into the peaks.", False),
         (ContainsAny(("[DATA NEEDED",)), "Slope [DATA NEEDED: error].", True),
@@ -82,7 +83,7 @@ def test_checker_clean_runs_the_skill_checker(
 
 
 def test_expectation_text_is_marked_as_automatic() -> None:
-    assert score(MaxWords(5), "word", INPUTS).text.startswith(AUTO_PREFIX)
+    assert score(MaxWords(5, "plain"), "word", INPUTS).text.startswith(AUTO_PREFIX)
 
 
 def write_evals(tmp_path: Path, cases: list[dict[str, object]]) -> Path:
@@ -102,7 +103,10 @@ def case(**overrides: object) -> dict[str, object]:
         "expected_output": "A results paragraph.",
         "files": ["files/notes.md"],
         "expectations": ["The slope is reported with its unit"],
-        "checks": [{"kind": "max_words", "limit": 50}, {"kind": "numbers_from_inputs"}],
+        "checks": [
+            {"kind": "max_words", "limit": 50, "format": "latex"},
+            {"kind": "numbers_from_inputs"},
+        ],
     }
     fields.update(overrides)
     return fields
@@ -112,7 +116,7 @@ def test_load_cases_reads_checks_and_input_text(tmp_path: Path) -> None:
     cases = load_cases(write_evals(tmp_path, [case()]))
     loaded = cases[1]
     assert isinstance(loaded, EvalCase)
-    assert loaded.checks == (MaxWords(50), NumbersFromInputs())
+    assert loaded.checks == (MaxWords(50, "latex"), NumbersFromInputs())
     assert "4.90" in loaded.input_text
     assert "17 November" in loaded.input_text
 

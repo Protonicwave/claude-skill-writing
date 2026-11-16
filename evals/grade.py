@@ -29,9 +29,9 @@ MAX_INPUT_BYTES = 1_000_000
 CHECKER_TIMEOUT_SECONDS = 60
 CHECKER_ERROR = ": error ["
 CHECKER_UNSOURCED_NUMBER = ": warning [number-source] "
+CHECKER_WORD_LIMIT = ": error [word-limit] "
 MAX_LISTED_ITEMS = 10
 
-WORD = re.compile(r"[A-Za-z0-9][\w'\u2019-]*")
 HASHTAG = re.compile(r"(?<![\w#&])#[A-Za-z]\w*")
 SENTENCE_END = re.compile(r"[.!?]+[\"')\]]*(?=\s|$)")
 NOT_PROSE_BLOCK = re.compile(r"^\s*(?:#|[-*+]\s|\d+[.)]\s|>|```|\|)")
@@ -47,6 +47,7 @@ class CheckerClean:
 @dataclass(frozen=True, slots=True)
 class MaxWords:
     limit: int
+    format: FormatName
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,7 +142,7 @@ def _format_name(spec: Mapping[str, object]) -> FormatName:
 
 CHECK_PARSERS: dict[str, Callable[[Mapping[str, object]], Check]] = {
     "checker_clean": lambda spec: CheckerClean(_format_name(spec)),
-    "max_words": lambda spec: MaxWords(_field(spec, "limit", int)),
+    "max_words": lambda spec: MaxWords(_field(spec, "limit", int), _format_name(spec)),
     "numbers_from_inputs": lambda spec: NumbersFromInputs(),
     "forbidden_phrases": lambda spec: ForbiddenPhrases(_strings(spec, "phrases")),
     "contains_any": lambda spec: ContainsAny(_strings(spec, "phrases")),
@@ -244,6 +245,12 @@ def _checker_errors(deliverable: str, fmt: FormatName) -> list[str]:
     return [line for line in lines if CHECKER_ERROR in line]
 
 
+def _word_limit_error(deliverable: str, fmt: FormatName, limit: int) -> str | None:
+    lines = _checker_output(deliverable, "--format", fmt, "--max-words", str(limit))
+    over = [line for line in lines if CHECKER_WORD_LIMIT in line]
+    return over[0].split(CHECKER_WORD_LIMIT, 1)[1].strip() if over else None
+
+
 def _unsourced_numbers(deliverable: str, input_text: str) -> list[str]:
     with tempfile.TemporaryDirectory() as scratch:
         inputs = Path(scratch) / "inputs.txt"
@@ -267,7 +274,7 @@ def _describe(check: Check) -> str:
     match check:
         case CheckerClean(fmt):
             description = f"check.py ({fmt}) reports no errors"
-        case MaxWords(limit):
+        case MaxWords(limit, _):
             description = f"at most {limit} words"
         case NumbersFromInputs():
             description = "every number appears in the prompt or input files"
@@ -297,9 +304,9 @@ def _verdict(check: Check, deliverable: str, input_text: str) -> tuple[bool, str
         case CheckerClean(fmt):
             errors = _checker_errors(deliverable, fmt)
             verdict = not errors, _listed(errors)
-        case MaxWords(limit):
-            count = len(WORD.findall(deliverable))
-            verdict = count <= limit, f"{count} words"
+        case MaxWords(limit, fmt):
+            over = _word_limit_error(deliverable, fmt, limit)
+            verdict = over is None, over or f"within {limit} words of prose"
         case NumbersFromInputs():
             unsourced = _unsourced_numbers(deliverable, input_text)
             verdict = (
