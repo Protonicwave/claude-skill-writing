@@ -80,10 +80,10 @@ A VERIFIED row can still carry a correction or expression of concern in its Retr
 Once the sources pass, check the draft against them, chained after the checker so one command runs both:
 
 ```
-python -I "<this skill's directory>/scripts/check.py" draft.tex --format latex; python -I "<this skill's directory>/scripts/verify.py" sources.jsonl --draft draft.tex > references-log.md
+python -I "<this skill's directory>/scripts/check.py" draft.tex --format latex --max-words <limit> --inputs <request and notes files>; python -I "<this skill's directory>/scripts/verify.py" sources.jsonl --draft draft.tex > references-log.md
 ```
 
-The checker takes the options `SKILL.md` gives; `;` runs the audit even when the checker finds errors.
+`;` runs the audit even when the checker finds errors, so the exit status is the verifier's alone: read the checker's output for its errors.
 
 It appends a "Draft audit" section to the log, each finding with its line in the draft. It reads LaTeX `\cite`-family commands, with options and natbib forms, and Pandoc `[@key]` citations.
 
