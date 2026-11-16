@@ -48,13 +48,13 @@ These go in the log by hand with the URL, the retrieval date, the edition or ver
 
 ## Checking with verify.py
 
-In Claude Code, put every paper in a JSON Lines file beside the draft, one source per line, written as the draft cites it:
+In Claude Code, put every paper in a JSON Lines file beside the draft, one source per line, written as the draft cites it. The search may start the file with each passage it finds; give each `claim` its final wording once the draft is settled, when `check.py` alone reports no errors, the word limit included. Write and edit the file with the Write and Edit tools, not with a script that generates it:
 
 ```
 {"key": "Feynman1982", "id": "10.1007/BF02650179", "title": "Simulating physics with computers", "authors": ["Feynman"], "year": 1982, "volume": "21", "pages": "467-488", "evidence": [{"claim": "the sentence in the draft", "quote": "the passage, word for word", "text": "feynman.html"}]}
 ```
 
-`id` is a DOI or arXiv ID (add `v{n}` to cite one arXiv version). `authors` lists surnames in order; a final `"et al."` stands for the rest, and `[]` cites a work with no personal authors. `volume`, `pages` and `text` are optional. `text` names a saved full text, plain or HTML, in the same folder as the sources file; save PDFs as HTML or text first. Then run, with a 10-minute command timeout:
+`id` is a DOI or arXiv ID (add `v{n}` to cite one arXiv version). `authors` lists surnames in order; a final `"et al."` stands for the rest, and `[]` cites a work with no personal authors. `volume`, `pages` and `text` are optional. `claim` is the citing sentence as the settled draft words it. Escape every double quote and backslash in a `claim` or `quote` as JSON requires, or `verify.py` rejects the line. `text` names a saved full text, plain or HTML, in the same folder as the sources file; save PDFs as HTML or UTF-8 text first, for example with `pdftotext -enc UTF-8 paper.pdf paper.txt`, because the checker and the verifier read UTF-8 only. Then run, with a 10-minute command timeout:
 
 ```
 python -I "<this skill's directory>/scripts/verify.py" sources.jsonl > references-log.md
@@ -84,6 +84,8 @@ python -I "<this skill's directory>/scripts/check.py" draft.tex --format latex -
 ```
 
 `;` runs the audit even when the checker finds errors, so the exit status is the verifier's alone: read the checker's output for its errors.
+
+Rerun it once after fixing everything a run reported, not after each edit. When an edit rewords a citing sentence, change its `claim` in the same turn. A draft over its word limit gets one cut of the excess the error states and about five words more, not a series of small trims.
 
 It appends a "Draft audit" section to the log, each finding with its line in the draft. It reads LaTeX `\cite`-family commands, with options and natbib forms, and Pandoc `[@key]` citations.
 
