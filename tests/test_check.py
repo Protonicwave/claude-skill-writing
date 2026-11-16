@@ -10,6 +10,7 @@ from check import (
     main,
     outline,
     split_sentences,
+    word_limit_issue,
 )
 
 EM_DASH = "\u2014"
@@ -474,3 +475,57 @@ def test_abbreviation_defined_twice_is_reported_at_the_second_definition() -> No
 
 def test_capitals_that_are_not_roman_numerals_are_checked() -> None:
     assert [i.line for i in abbreviation_issues("The DC supply was stable.")] == [1]
+
+
+PROSE_OF_SIX_WORDS = {
+    Format.PLAIN: "Results\n\nThe gain rose above threshold.\n",
+    Format.MARKDOWN: (
+        "# Results\n\nThe gain rose [above](https://example.org/a-b-c) threshold.\n"
+        "\n```\ncode words here\n```\n<!-- a hidden note -->\n| a | b |\n"
+    ),
+    Format.LATEX: (
+        "\\section{Results}\n"
+        "The gain rose $g = 2.5\\,\\mathrm{dB}$ above threshold. % four more words\n"
+        "\\begin{equation}\nE = m c^2\n\\end{equation}\n"
+    ),
+}
+
+
+@pytest.mark.parametrize("fmt", list(Format))
+def test_word_limit_counts_prose_only(fmt: Format) -> None:
+    assert word_limit_issue(PROSE_OF_SIX_WORDS[fmt], fmt, 6) is None
+    assert word_limit_issue(PROSE_OF_SIX_WORDS[fmt], fmt, 5) is not None
+
+
+def test_word_limit_errors_on_the_line_that_passes_it() -> None:
+    issue = word_limit_issue("one two\nthree four\nfive", Format.PLAIN, 3)
+    assert issue is not None
+    assert (issue.line, issue.rule, issue.severity) == (2, "word-limit", Severity.ERROR)
+    assert issue.message.startswith("5 words of prose")
+
+
+def test_word_limit_accepts_an_empty_draft() -> None:
+    assert word_limit_issue("", Format.PLAIN, 1) is None
+
+
+def test_cli_word_limit_fails_a_long_draft(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    draft = tmp_path / "draft.md"
+    draft.write_text("The gain rose.", encoding="utf-8")
+    assert main([str(draft), "--max-words", "3"]) == 0
+    assert main([str(draft), "--max-words", "2"]) == 1
+    assert f"{draft}:1: error [word-limit] 3 words" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("limit", ["0", "-5", "many"])
+def test_cli_rejects_a_word_limit_below_one(tmp_path: Path, limit: str) -> None:
+    with pytest.raises(SystemExit) as stopped:
+        main([str(tmp_path / "draft.md"), "--max-words", limit])
+    assert stopped.value.code == 2
+
+
+def test_cli_outline_refuses_a_word_limit(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as stopped:
+        main([str(tmp_path / "draft.md"), "--outline", "--max-words", "5"])
+    assert stopped.value.code == 2

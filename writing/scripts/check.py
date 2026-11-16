@@ -1,8 +1,12 @@
 """Flag the measurable signs of machine-written prose in a draft.
 
 Usage:
-    check.py <path> [--format plain|markdown|latex] [--outline]
-    check.py - [--format ...]        read the draft from standard input
+    check.py <path> [--format plain|markdown|latex] [--max-words N]
+    check.py <path> --outline [--format ...]
+    check.py - [...]                 read the draft from standard input
+
+--max-words N is an error when the prose, without markup, maths or code, runs
+past N words; it is reported on the line where the limit is passed.
 
 --outline prints the first sentence of each body paragraph with its line,
 so the argument can be read in order, and runs no checks.
@@ -545,6 +549,17 @@ def find_issues(text: str, fmt: Format) -> list[Issue]:
     return sorted(issues, key=lambda issue: issue.line)
 
 
+def word_limit_issue(text: str, fmt: Format, limit: int) -> Issue | None:
+    """An error on the line where the prose passes `limit` words, if it does."""
+    lines = prose_lines(text, fmt)
+    running = list(accumulate(len(WORD.findall(line.text)) for line in lines))
+    if not running or running[-1] <= limit:
+        return None
+    passed_on = lines[bisect_right(running, limit)].number
+    message = f"{running[-1]} words of prose against a limit of {limit}; cut to fit"
+    return Issue(passed_on, "word-limit", ERR, message)
+
+
 def outline(text: str, fmt: Format) -> list[tuple[int, str]]:
     """The first sentence of each body paragraph, with the line it starts on."""
     return [
@@ -576,6 +591,14 @@ def read_draft(path: str) -> str:
     return text
 
 
+def _positive_int(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        message = f"expected a whole number above 0, got {value}"
+        raise argparse.ArgumentTypeError(message)
+    return number
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Flag the measurable signs of machine-written prose."
@@ -591,7 +614,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="print each body paragraph's first sentence instead of checking",
     )
+    parser.add_argument(
+        "--max-words",
+        type=_positive_int,
+        metavar="N",
+        help="report an error when the prose runs past N words",
+    )
     args = parser.parse_args(argv)
+    if args.outline and args.max_words:
+        parser.error("--outline runs no checks, so it takes no --max-words")
 
     try:
         text = read_draft(args.path)
@@ -609,6 +640,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{name}:{line}: {sentence}")
         return 0
     issues = find_issues(text, fmt)
+    if args.max_words and (over := word_limit_issue(text, fmt, args.max_words)):
+        issues = sorted([*issues, over], key=lambda issue: issue.line)
     for issue in issues:
         print(f"{name}:{issue.line}: {issue.severity} [{issue.rule}] {issue.message}")
     return 1 if any(issue.severity is Severity.ERROR for issue in issues) else 0
