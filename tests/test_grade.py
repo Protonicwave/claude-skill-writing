@@ -240,7 +240,7 @@ def test_main_refuses_a_run_without_metadata(tmp_path: Path) -> None:
 
 def test_shipped_eval_set_loads_with_judgement_and_automatic_checks() -> None:
     cases = load_cases(DEFAULT_EVALS)
-    assert len(cases) == 9
+    assert len(cases) == 13
     for loaded in cases.values():
         assert loaded.expectations
         assert loaded.checks
