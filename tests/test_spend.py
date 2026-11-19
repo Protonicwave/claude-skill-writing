@@ -184,7 +184,7 @@ def test_rejects_a_malformed_price_table(tmp_path: Path, prices: object) -> None
         load_prices(path)
 
 
-def test_shipped_prices_cover_every_model_the_evals_run(tmp_path: Path) -> None:
+def test_shipped_prices_cover_every_model_the_evals_run() -> None:
     reference = Path(__file__).resolve().parent.parent / "evals" / "reference.json"
     prices = load_prices(reference)
     assert {"claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"} <= set(prices)
