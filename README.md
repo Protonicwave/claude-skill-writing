@@ -8,8 +8,8 @@ A skill for Claude that writes and edits prose people read (reports, dissertatio
 - `writing/scripts/check.py`: the draft checker, standard library only.
 - `writing/scripts/verify.py`: the source verifier, standard library only.
 - `install.py`: installs the skill and builds the upload zip.
-- `evals/`: the eval set, its input files and the grader.
-- `tests/`: checker rules, verifier, grader, skill structure and installer.
+- `evals/`: the eval set, its input files, the grader, and the scripts that price runs from their transcripts, hide the arm from graders and compare runs with the reference.
+- `tests/`: checker rules, verifier, grader, eval scripts, skill structure and installer.
 
 ## Install
 
@@ -62,11 +62,20 @@ uv run mypy
 uv run vulture writing/scripts install.py tests evals --min-confidence 80
 ```
 
+The eval scripts that price, hide and compare runs need full branch coverage, and the locked dependencies are audited:
+
+```
+uv run coverage run --branch --source=evals -m pytest
+uv run coverage report --show-missing --fail-under=100 --include=evals/spend.py,evals/compare.py,evals/blind.py
+uv run coverage erase
+uv export --format pylock.toml --no-emit-project -o <scratch>/pylock.toml && uv run pip-audit --locked <scratch>
+```
+
 ### Evals
 
-`evals/evals.json` holds thirteen cases in skill-creator's format, with their input files in `evals/files/`. Each case lists judgement expectations, which a grader reads the output against, and programmatic checks: checker errors, word limits (counted on the prose by `check.py --max-words`, as the skill counts them), hashtag limits, banned phrases, required gap markers, the share of one-sentence paragraphs, and whether every number in the output appears in the prompt or input files. Cases 10 to 13 are ones the base model finds hard: a literature review over four real papers with two misremembered details, a methods section marked against a rubric, a reflection that must match a sample of the student's writing, and a citation to a book with no DOI.
+`evals/evals.json` holds twenty cases in skill-creator's format, with their input files in `evals/files/`. Each case lists judgement expectations, which a grader reads the output against, and programmatic checks: checker errors, word limits (counted on the prose by `check.py --max-words`, as the skill counts them), hashtag limits, banned phrases, required gap markers, the share of one-sentence paragraphs, and whether every number in the output appears in the prompt or input files. Cases 10 to 13 are ones the base model finds hard: a literature review over four real papers with two misremembered details, a methods section marked against a rubric, a reflection that must match a sample of the student's writing, and a citation to a book with no DOI. Cases 14 to 17 score the choices the skill makes for itself: reviewer comments of which one is wrong, a request that leaves its length unstated and one figure missing, an edit of one word in two places whose spend is what counts, and a rubric that overrides the skill's own style. Cases 18 to 20 score analysis and decisions the student asks for: a recommendation that one constraint in the notes rules out, results whose difference coincides with a recalibration, and an options appraisal that a handbook rule narrows.
 
-Each case runs in two arms in skill-creator's layout: `with_skill` follows the skill, and `without_skill` runs the same model with no skill, which shows what the skill adds and what it costs. Run each case in a fresh subagent on the model under test, with no access to `evals.json`, given this brief:
+Each case runs in two arms in skill-creator's layout: `with_skill` follows the skill, and `without_skill` runs the same model with no skill, which shows what the skill adds and what it costs. Both arms run on each model under test, `opus` and `sonnet`. Run each case in a fresh subagent with its model set explicitly, with no access to `evals.json`, given this brief:
 
 ```
 You are running one test case of a writing skill. Act on the request below exactly as you would for a real user, following the skill.
@@ -78,26 +87,42 @@ The user's request, in their words:
 
 The user's files: <absolute paths, or none>
 
-Output directory: <repo>/evals/workspace/iteration-<N>/<eval name>/<arm>/outputs/
+Output directory: <repo>/evals/workspace/iteration-<N>/<model>/<eval name>/<arm>/outputs/
 - Save the text you would deliver, exactly as delivered, to outputs/deliverable.md.
 - Save what you would tell the user after the text (open markers, judgement calls, where logs are) to outputs/notes.md.
 - Save every other file you create (sources file, verification log, saved pages, drafts) in outputs/.
-- If you spawn subagents, save outputs/subagents.json: a JSON list with one object per subagent, {"purpose": "<what it did>", "total_tokens": <the total_tokens its result reported>}.
 
 There is no user to answer questions. Where the skill says to ask, take the most reasonable reading and record the question in notes.md. Do not open anything else under <repo>/evals/ apart from the user's files above.
 
 Reply with one line: done, or failed and why.
 ```
 
-For the no-skill arm, the brief speaks of a writing task rather than a skill, drops "following the skill", and replaces the skill paragraph with "Skill: none. Do not use the Skill tool, and do not open anything under <repo>/writing/ or ~/.claude/skills/."
+For the no-skill arm, the brief speaks of a writing task rather than a skill, drops "following the skill", and replaces the skill paragraph with "Skill: none. Do not use the Skill tool, and do not open anything under <repo>/writing/ or ~/.claude/skills/." Each case directory also holds its `eval_metadata.json`. A case whose spend has varied by more than 25% between runs runs twice per arm, the second time into `<arm>-2/`, and the median of the two counts.
 
-Save the token count and duration from each run's completion notice to `timing.json` in its run directory, as `{"total_tokens": 57739, "duration_ms": 45665}`. The notice counts only the run's own context, not its subagents', which is why the brief asks for `subagents.json`. Write the judgement grades into each run's `grading.json` as expectations with `text`, `passed` and `evidence`, then score the programmatic checks and compare the iteration with the reference:
+When a run finishes, copy its transcript, and those of every subagent it spawned, into its run directory. The launch result gives the run's agent id, and Claude Code keeps the transcripts in `~/.claude/projects/<project>/<session>/subagents/`:
 
 ```
-uv run python evals/grade.py evals/workspace/iteration-3/*/with_skill
-uv run python evals/compare.py evals/workspace/iteration-3
+uv run python evals/spend.py capture <agent id> evals/workspace/iteration-5/opus/data-gap/with_skill --from <subagents folder>
+uv run python evals/spend.py price evals/workspace/iteration-5/opus/*/with_skill
 ```
 
-The grader merges its results into each run's `grading.json`, keeping the judgement grades. `compare.py` prints each case's with-skill score and tokens, subagents included, beside `evals/reference.json`, which holds the reference with-skill run and the no-skill arm. It exits 1 when a case scores below its reference or the with-skill runs use more than `max_extra_tokens` beyond the no-skill arm across all cases, and 2 when a run is missing or malformed. The no-skill arm is run once per model: rerun it and update the reference when the model changes.
+`price` prints each run's spend in US dollars at the list prices in `evals/reference.json`, dated when they were read, with each message priced once at its own model's rates and cache reads and writes priced as such. Requests a tool makes outside the transcript, such as a web search's own model call, are not counted.
 
-`evals/baseline.md` records the score of the skill before any change, `evals/after-upgrade.md` the score after the review passes, tones and new registers were added, `evals/after-efficiency.md` the score and cost after the work to cut tokens, and `evals/after-quality.md` the score and cost after the expectations for review passes and source search were added and the sources procedure was changed, which set the current reference.
+Grade the judgement expectations blind, so the grader knows neither the arm nor the model. `hide` copies every run's outputs to `blind/<case>/<random id>/` and writes the key to a path outside the iteration:
+
+```
+uv run python evals/blind.py hide evals/workspace/iteration-5 --key <path outside the iteration>
+```
+
+Give an Opus subagent per case that case's blind folder, its prompt and expectations from `evals.json` and its input files, and nothing else; it writes each copy's grades to `grading.json` in that copy, as expectations with `text`, `passed` and `evidence`. Then map the grades back, score the programmatic checks and compare each model with the reference:
+
+```
+uv run python evals/blind.py reveal evals/workspace/iteration-5 --key <the key>
+uv run python evals/grade.py evals/workspace/iteration-5/*/*/*_skill*
+uv run python evals/compare.py evals/workspace/iteration-5 --model opus
+uv run python evals/compare.py evals/workspace/iteration-5 --model sonnet
+```
+
+`reveal` writes nothing unless every copy is graded. The grader merges its results into each run's `grading.json`, keeping the judgement grades. `compare.py` prints each case's with-skill score and spend, subagents included, beside the model's section of `evals/reference.json`, which holds the reference with-skill run and the no-skill arm. It exits 1 when a case scores below its reference, when the total score does not beat the model's no-skill arm, when the extra spend over that arm on the cases `max_extra_spend` lists exceeds its budget, or, for a section that names a `rival`, when the total score is below the rival model's no-skill arm or the spend is not below it. It exits 2 when a run, a transcript or a price is missing or malformed. The no-skill arm is run once per model: rerun it and update the reference when the model or the prices change.
+
+`evals/baseline.md` records the score of the skill before any change, `evals/after-upgrade.md` the score after the review passes, tones and new registers were added, `evals/after-efficiency.md` the score and cost after the work to cut tokens, and `evals/after-quality.md` the score and cost after the expectations for review passes and source search were added and the sources procedure was changed, which set the current reference. `evals/before-judgement.md` and `evals/after-judgement.md` record all four arms before the judgement changes and the with-skill arms after them, with the spend budgets and the rerun that followed a change to the notes rule.

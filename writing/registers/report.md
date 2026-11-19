@@ -32,6 +32,14 @@ If a rubric, handbook or template is in the working folder, it overrides this fi
 
 **Discussion.** The most important section and the most narrative. Interpret each result against the underlying physics and the published literature: agreement within uncertainty, or disagreement and its likely cause, quantified. Give the details that could throw doubt on the interpretation. Name the limitations by size, not as a ritual ("human error" is never an explanation). Say what the result means for the field and what the next measurement would be.
 
+**Analysing a result.** Before saying what a result means, set its size against everything else that could produce it.
+
+- Compare the effect with the spread within each condition and the number of runs behind it. A difference smaller than about twice the combined uncertainty of the two means is not evidence of one.
+- List what else changed between the conditions compared: calibration, sample batch, operator, software version, date. Weigh each by its size against the effect. A change made at the same time as the change of condition cannot be separated from it in these data: say so, give its size, and say when its direction is unknown.
+- Conclude only what survives the alternatives. With few runs or an unresolved confound, the data are "consistent with" the explanation, never "show" it, and any word of likelihood follows the yardstick in `clarity.md`.
+- Report how large an effect is and whether that size matters for the question, not only whether it is significant: "a p-value, or statistical significance, does not measure the size of an effect or the importance of a result" (American Statistical Association statement on p-values, 2016, principle 5).
+- End on the measurement that would separate the explanations, such as alternating the two conditions under one calibration.
+
 **Conclusion.** Link the results back to the aims in the introduction. No new concepts, no new results. End on the open question or the limitation that matters most, not on a restatement.
 
 **Project plan.** Aims stated as checkable outcomes, the method for each, the risks with their mitigations, and a timeline whose tasks match the aims one for one. Write it as a plan the reader could hold the student to.
