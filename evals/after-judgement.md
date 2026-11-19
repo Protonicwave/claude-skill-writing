@@ -1,6 +1,6 @@
 # Score and spend after the judgement changes
 
-The skill after phases 4 and 5 (decide and log, effort tiers, decision and results registers), run with the skill on all twenty cases for both models and graded blind. Neither budget in the plan was met. Opus with the skill scored 131.5 of 136 against 115.5 for plain Opus, and spent $6.66 more than plain Opus on the thirteen original cases, against a budget of $4.34. Sonnet with the skill scored 126 against 115.5 for plain Opus and spent $3.77 against $5.49, so its two rival conditions hold, but three cases fall below their reference.
+The skill after the judgement changes (decide and log choices, read by effort tier, new decision and results registers), run with the skill on all twenty cases for both models and graded blind. The targets set for these changes were not both met. Opus with the skill scored 131.5 of 136 against 115.5 for plain Opus, and spent $6.66 more than plain Opus on the thirteen original cases, against a budget of $4.34. Sonnet with the skill scored 126 against 115.5 for plain Opus and spent $3.77 against $5.49, so its two rival conditions hold, but three cases fall below their reference.
 
 ## How it was run
 
@@ -38,7 +38,7 @@ Plain Opus scored 115.5 for $5.49 and plain Sonnet 114 for $1.61.
 
 ## Budgets
 
-- Budget 1, Opus with the skill, extra spend over plain Opus on cases 1 to 13: $6.66 measured against $4.34. It was $5.42 before the changes, so it rose by about $1.24 where the plan asked for a fall of 20%.
+- Budget 1, Opus with the skill, extra spend over plain Opus on cases 1 to 13: $6.66 measured against $4.34. It was $5.42 before the changes, so it rose by about $1.24 where the target was a fall of 20%.
 - Budget 2, Sonnet with the skill, spend below plain Opus and score at least plain Opus's: $3.77 against $5.49 and 126 against 115.5. Met.
 - Cases below their reference: Opus lay-summary-limit (5 against 7), literature-review (7.5 against 8), newsletter-defaults (5 against 6) and trivial-edit (5 against 6); Sonnet linkedin-post (8 against 9), reviewer-comments (5 against 7) and newsletter-defaults (4 against 5).
 
@@ -58,13 +58,13 @@ Failures on newsletter-defaults and trivial-edit came from the notes: a default'
 - trivial-edit on Sonnet still writes notes of three sentences. On Opus it costs $0.29, against $0.17 plain, so the case written to score restraint on spend is still more expensive with the skill.
 - lay-summary-limit is below reference on both models. Opus's own failure is that the summary never says its figures come from a simulation. Its automatic check also fails on 85.4, 88.1 and 100, which are correct derivations from the abstract (85 plus 0.4, 85 plus 3.1, and 10^8 written as 100 million) that the number check cannot match.
 - Opus reviewer-comments (6 of 7) fails only the automatic check that every number appears in the input: it flags 10.18434, 19, 2026, 30, 4.886, 5.12 and 78. Plain Opus passed that check in iteration 5.
-- Spend rose in nine of the ten reruns against iteration 6, so the briefs in files did not cause the increase. Runs of one case already varied by up to 45%, so one run per case cannot show a real difference.
+- Spend rose in nine of the ten reruns against iteration 6, so the briefs in files did not cause the increase. Runs of one case varied by up to 45% in earlier iterations, so one run per case cannot show a real difference.
 
 ## What the figures show
 
 - The skill's score advantage held. Opus with it beats plain Opus by 16 expectations, and Sonnet with it beats plain Opus by 10.5 at 69% of plain Opus's spend.
 - The decision and results registers raised the new analysis cases: recommendation-email rose from 5 to 7 on both models, and options-appraisal and data-gap rose on Opus.
-- The judgement changes did not cut spend. Turn counts and the amount the skill makes the model read are what drive it, and no change in this plan cuts either. Cover-letter on Opus ran an examiner pass on a 316 word letter, because the advert acts as a rubric, and rubric-conflict on Sonnet took 16 turns against 5.
+- The judgement changes did not cut spend. Turn counts and the amount the skill makes the model read are what drive it, and no change in these changes cuts either. Cover-letter on Opus ran an examiner pass on a 316 word letter, because the advert acts as a rubric, and rubric-conflict on Sonnet took 16 turns against 5.
 - Plain-arm figures are from iteration 5, so a model-side change since then is not controlled for.
 
 ## Limits
@@ -72,4 +72,4 @@ Failures on newsletter-defaults and trivial-edit came from the notes: a default'
 - One run per case in the rerun, and two in the noisy cases of iteration 6.
 - Spend counts the runs' own transcripts. A web search's own model call is not counted, and the with-skill arms search more.
 - The grader is an Opus subagent that sees no arm labels but is a model: one expectation either way is as likely to come from the grader as from the skill.
-- Cover-letter, literature-review and rubric-conflict show where spend sits. Reducing it means changing which files the tiers read and when a pass runs, which this plan did not do.
+- Cover-letter, literature-review and rubric-conflict show where spend sits. Reducing it means changing which files the tiers read and when a pass runs, which these changes did not do.

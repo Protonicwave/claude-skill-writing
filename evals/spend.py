@@ -31,7 +31,7 @@ TOKENS_PER_MILLION = 1_000_000
 MAX_TRANSCRIPT_BYTES = 200_000_000
 MAX_TRANSCRIPTS_PER_RUN = 200
 PRICED_SPEED = "standard"
-# Claude Code writes these for a usage limit or an API error; they cost nothing.
+# The harness writes these for a usage limit or an API error; they cost nothing.
 SYNTHETIC_MODEL = "<synthetic>"
 # Claude Code's agent ids are short hex strings; anything else could escape the folder.
 AGENT_ID = re.compile(r"[A-Za-z0-9]{1,64}")

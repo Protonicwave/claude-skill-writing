@@ -6,7 +6,7 @@ The skill as it stood on `feat/judgement` before any change to `writing/`, run o
 
 Iteration 5, on 2026-11-19. Each run was a general-purpose subagent with its model set explicitly, given the brief in `README.md`. Spend is list price from the run's own transcripts and those of every subagent it spawned, at the prices in `reference.json`. Every judgement expectation was graded blind by an Opus subagent per case, which saw only the case's prompt, input files, expectations and the unlabelled copies; the key stayed outside the iteration until all 92 copies were graded. Programmatic checks were scored by `grade.py` after the key was applied.
 
-Twelve Opus runs were not rerun, because their transcripts could be matched to their stored outputs by the delivered text. With the skill, from iteration 4: cases 13, 8, 4, 9, 5 and 7. Without the skill, from the iteration-2 control run: cases 8, 4, 9, 5, 7 and 12. Every other run is new: all of Sonnet's, Opus on cases 14 to 20, and Opus on the cases whose old transcript was missing or matched more than one agent (2, 3, 6, 12 with the skill; 2, 3, 6, 13 without). Cases 1, 10 and 11 ran twice per arm on both models, because their spend has varied by more than 25% between runs; the median counts. This differs from the plan, which copied every iteration-4 run: it also copied only one arm, because iteration 4 holds no plain-Opus runs.
+Twelve Opus runs were not rerun, because their transcripts could be matched to their stored outputs by the delivered text. With the skill, from iteration 4: cases 13, 8, 4, 9, 5 and 7. Without the skill, from the iteration-2 control run: cases 8, 4, 9, 5, 7 and 12. Every other run is new: all of Sonnet's, Opus on cases 14 to 20, and Opus on the cases whose old transcript was missing or matched more than one agent (2, 3, 6, 12 with the skill; 2, 3, 6, 13 without). Cases 1, 10 and 11 ran twice per arm on both models, because their spend has varied by more than 25% between runs; the median counts. The aim had been to copy every iteration-4 run, but iteration 4 holds no plain-Opus runs, so only the with-skill arm could be copied from it.
 
 Expectation counts per case are those in `evals.json`. The old Opus reference was graded by the author of the skill; this one is graded blind, so differences of one expectation are as likely to come from the grader as from the skill.
 
@@ -50,7 +50,7 @@ Three cases carry most of Opus's extra spend: literature-review ($1.91), rubric-
 - Case 18 (recommendation-email) scores 5 of 7 in all four arms, so something in its expectations is missed by every arm. The grader's evidence is in each copy's `grading.json` under `evals/workspace/iteration-5/`, which git ignores.
 - Opus with the skill spends less than plain Opus in case 16 ($0.15 against $0.17), the case written to score restraint on spend. Sonnet with the skill spends $0.08 against $0.07.
 - Against the old Opus reference, data-gap and rubric-methods are one expectation lower (7 of 8 each) and supervisor-email is one higher. The reference now holds these figures, so no case is below its reference on this iteration.
-- Runs of the same case differ in spend by up to 25%: literature-review with the skill cost $2.61 and $2.90 on Opus and $0.25 and $0.34 on Sonnet.
+- Runs of the same case differ in spend by up to 36% here: literature-review with the skill cost $2.61 and $2.90 on Opus and $0.25 and $0.34 on Sonnet.
 
 ## Limits
 

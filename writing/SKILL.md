@@ -24,7 +24,7 @@ A named tone ("warmer", "shorter") also needs `voice.md`. Everywhere: UK spellin
 
 ## Effort
 
-Each turn rereads the conversation, so read everything the tier names in one turn.
+Each turn rereads the conversation: read everything the tier names in one turn.
 
 - **Light**, a message or an edit the request spells out: the register, unless the request names every change. Run only `scripts/check.py`, fixing only your own words.
 - **Full**, text that draws on published work: the Standard files, `review.md`, `sources.md` and `sources-search.md`.
@@ -37,8 +37,8 @@ Never open a script's source. After spawning a subagent, end the turn: it report
 Decide every choice about the text and log it, including how each finding or forwarded comment is settled: a question costs the student a round trip, a logged choice one line to reverse.
 
 - Never decide a fact only the student has, such as a result, date or name: mark it. Never send or publish.
-- Ask only when one draft cannot serve two readings (a lay summary or a technical abstract); even then, write the likelier and name the other first in the notes.
-- Settle reader, length, format, tone, deadline and scope: each is given, defaulted from the register and logged, or marked.
+- Never ask. When one draft cannot serve two readings (a lay summary or a technical abstract), write the likelier and name the other first in the notes.
+- Settle reader, length, format, tone, deadline, scope: each is given, defaulted and logged, or marked.
 - Before drafting, write three to six yes/no tests from the request, rubric and notes ("Does the opening give the value with its uncertainty?"), and give them to the examiner: specific tests catch what rereading misses.
 - The notes end with a judgement log of choices the student might reverse, each with its reason and how to change it. A literal edit gets one or two sentences and no log.
 
@@ -51,7 +51,7 @@ Decide every choice about the text and log it, including how each finding or for
 
 ## Process
 
-1. Over about 800 words, outline first: one claim sentence per paragraph, shown in the notes.
+1. Over 800 words, outline first: one claim sentence per paragraph, shown in the notes.
 2. Draft in the register.
 3. Check the draft file with `scripts/check.py`, in one command, chaining `scripts/verify.py` for a cited draft as `sources.md` shows:
 
@@ -60,9 +60,9 @@ Decide every choice about the text and log it, including how each finding or for
    ```
 
    Fix every error and judge each warning as `tells.md` says. Stop after three runs and list what is left in the notes.
-4. Run the passes `review.md` gives, settle each finding as it says, then rerun step 3's command.
-5. Before delivering, check each test, and that nothing the notes lack was added and no uncertainty or caveat dropped.
-6. Deliver in the requested format, followed only by open markers, the verification log's location and the judgement log.
+4. If the tier read `review.md`, run its passes, settle each finding as it says, then rerun step 3's command.
+5. Before delivering, check each test, and that nothing the notes lack was added and no caveat dropped.
+6. Deliver in the requested format, followed only by open markers, the verification log's location, what other files send to the notes, and the judgement log.
 
 ## Editing the student's text
 
