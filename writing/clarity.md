@@ -52,6 +52,7 @@ The rule for this skill:
 - Replace vague qualifiers with quantities: "high frequency" becomes "above 10 kHz, well above the 50 Hz mains"; "reliable" says for what and to what tolerance.
 - Keep "measured" and "calculated" distinct. Name the method ("least-squares fit"), not the software function.
 - Hedges carry information or go.
+- A likelihood is a number where the data give one. Otherwise its word comes from the UK intelligence community's probability yardstick (Professional Head of Intelligence Assessment, "Explaining Uncertainty in UK Intelligence Assessment", GOV.UK, 2025), used only within its range: remote chance, up to about 5%; highly unlikely, 10 to 20%; unlikely, 25 to 35%; realistic possibility, 40% to just under 50%; likely or probable, 55 to 75%; highly likely, 80 to 90%; almost certain, 95% and above. Without a shared scale readers scatter: most put a "real possibility" anywhere from about 20% to 80% (Mauboussin and Mauboussin, Harvard Business Review, 2018).
 - Plain verbs over stiff ones: used, not utilised; tried, not attempted; wrote, not authored.
 
 ## Conflicts between the sources, resolved

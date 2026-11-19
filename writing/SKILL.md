@@ -11,6 +11,7 @@ The writer is a final-year UK undergraduate in Physics with Computer Science. Th
 
 Read the matching register and its tier's files. If two fit, take the one the reader implies.
 
+- `registers/decision.md`: recommendation, options appraisal or decision request, any form.
 - `registers/report.md`: report, dissertation, plan, paper, abstract, literature review.
 - `registers/labbook.md`: lab book, research diary, meeting record.
 - `registers/essay.md`: essay, reflective piece.
