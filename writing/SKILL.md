@@ -9,7 +9,7 @@ The writer is a final-year UK undergraduate in Physics with Computer Science. Th
 
 ## Register
 
-Read the matching register and its tier's files. If two fit, ask.
+Read the matching register and its tier's files. If two fit, take the one the reader implies.
 
 - `registers/report.md`: report, dissertation, plan, paper, abstract, literature review.
 - `registers/labbook.md`: lab book, research diary, meeting record.
@@ -31,16 +31,26 @@ Each turn rereads the whole conversation, so read everything the tier names in o
 
 Never open a script's source. After spawning a subagent, end the turn: it reports when done, so never poll or sleep. Revise with edits, not rewrites.
 
+## Decisions
+
+Decide every choice about the text and log it, including how each reviewer's finding or forwarded comment is settled: a question costs the student a round trip, a logged choice one line to reverse.
+
+- Never decide a fact only the student has, such as a result, date or name: mark it. Never send or publish.
+- Ask only when one draft cannot serve two readings (a lay summary or a technical abstract); even then, write the likelier and name the other first in the notes.
+- Settle reader, length, format, tone, deadline and scope: each is given, defaulted from the register and logged, or marked.
+- Before drafting, write three to six yes/no tests from the request, rubric and notes ("Does the opening give the value with its uncertainty?"), and give them to the examiner: specific tests catch what rereading misses, and rereading to improve degrades text.
+- The notes end with a judgement log: three to five choices the student might reverse, each with its reason.
+
 ## Before drafting
 
 1. A rubric, handbook, template, word limit or supervisor's instruction outranks this skill. Read it first.
-2. Name the reader, the claim and the evidence, one sentence each.
+2. Name the claim and the evidence, one sentence each.
 3. Facts come only from the student's data, notes, code and results, or from verified sources, never from memory. A gap stays visible: `[DATA NEEDED: what]`, `[CITATION NEEDED: claim]`, or the markers `sources.md` defines.
 4. A sample of the student's own writing sets the style: match its sentence length, "I" or "we", connectives and formality. Without one, read `exemplars.md` for work over about 800 words.
 
 ## Process
 
-1. Ask for what is missing. Over about 800 words, agree an outline first: one claim sentence per paragraph.
+1. Over about 800 words, outline first: one claim sentence per paragraph, shown in the notes.
 2. Draft in the register.
 3. Check the draft file with `scripts/check.py`, in one command, chaining `scripts/verify.py` for a cited draft as `sources.md` shows:
 
@@ -48,15 +58,10 @@ Never open a script's source. After spawning a subagent, end the turn: it report
    python -I "<this skill's directory>/scripts/check.py" <draft> --format plain|markdown|latex --max-words <any limit set> --inputs <request saved to a file, notes and data>
    ```
 
-   Fix every error and judge each warning as `tells.md` says.
-4. Run the passes `review.md` gives and settle each finding by changing the text or showing it wrong, then rerun step 3's command.
-5. Before delivering, look for what the checker cannot see:
-   - a tone change that puts blame on a person;
-   - a claim, skill or event the notes do not contain;
-   - agreement with a value or model stated without its uncertainty;
-   - a caveat of the source dropped from a summary;
-   - one-sentence paragraphs in a post.
-6. Deliver in the requested format, followed only by open markers, the verification log's location and judgement calls for the student.
+   Fix every error and judge each warning as `tells.md` says. Stop after three runs and list what is left in the notes.
+4. Run the passes `review.md` gives, settle each finding as it says, then rerun step 3's command.
+5. Before delivering, check each test, and that nothing the notes lack was added and no uncertainty or caveat dropped.
+6. Deliver in the requested format, followed only by open markers, the verification log's location and the judgement log.
 
 ## Editing the student's text
 

@@ -68,7 +68,7 @@ Confidence at any setting stays within what the evidence holds, as its dial says
 
 ## Conflicting requests
 
-Some requests pull a dial both ways ("shorter but with more detail on the method"). Usually they mean different parts of the text: cut elsewhere and keep the method. When they cannot be reconciled within a word limit, ask one question. When a requested tone would break a rule above (more confident than the data allow, warmer by adding an invented compliment), apply the rest and say in the delivery note which part was held back and why.
+Some requests pull a dial both ways ("shorter but with more detail on the method"). Usually they mean different parts of the text: cut elsewhere and keep the method. When they cannot be reconciled within a word limit, write the likelier reading and name the other in the judgement log. When a requested tone would break a rule above (more confident than the data allow, warmer by adding an invented compliment), apply the rest and say in the delivery note which part was held back and why.
 
 ## Example
 
