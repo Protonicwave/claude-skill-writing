@@ -1,147 +1,351 @@
 {
-  "max_extra_tokens": 400000,
-  "cases": {
-    "cited-paragraph": {
-      "total": 7,
-      "with_skill": {
-        "passed": 7,
-        "tokens": 118567
+  "prices": {
+    "date": "2026-11-19",
+    "source": "claude-api skill model table and migration guide, cached 2026-11-03",
+    "usd_per_million_tokens": {
+      "claude-opus-5-5": {
+        "input": 4,
+        "output": 20,
+        "cache_write_5m": 5,
+        "cache_write_1h": 8,
+        "cache_read": 0.2
       },
-      "without_skill": {
-        "passed": 5,
-        "tokens": 52202
+      "claude-sonnet-5-5": {
+        "input": 2,
+        "output": 10,
+        "cache_write_5m": 2.5,
+        "cache_write_1h": 4,
+        "cache_read": 0.1
+      },
+      "claude-haiku-5-5": {
+        "input": 0.1,
+        "output": 0.5,
+        "cache_write_5m": 0.125,
+        "cache_write_1h": 0.2,
+        "cache_read": 0.01,
+        "long_prompt": {
+          "over_tokens": 100000,
+          "input": 0.5,
+          "output": 2.5,
+          "cache_write_5m": 0.625,
+          "cache_write_1h": 1,
+          "cache_read": 0.05
+        }
+      }
+    }
+  },
+  "models": {
+    "opus": {
+      "max_extra_spend": {
+        "usd": null,
+        "cases": [
+          "cited-paragraph",
+          "nonexistent-citation",
+          "data-gap",
+          "lay-summary-limit",
+          "rewrite-student-text",
+          "supervisor-email",
+          "tone-shift",
+          "cover-letter",
+          "linkedin-post",
+          "literature-review",
+          "rubric-methods",
+          "voice-match",
+          "book-citation"
+        ]
+      },
+      "cases": {
+        "cited-paragraph": {
+          "total": 7,
+          "with_skill": {
+            "passed": 7,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": 5,
+            "spend_usd": null
+          }
+        },
+        "nonexistent-citation": {
+          "total": 6,
+          "with_skill": {
+            "passed": 6,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": 5,
+            "spend_usd": null
+          }
+        },
+        "data-gap": {
+          "total": 8,
+          "with_skill": {
+            "passed": 8,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": 6,
+            "spend_usd": null
+          }
+        },
+        "lay-summary-limit": {
+          "total": 7,
+          "with_skill": {
+            "passed": 7,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": 4,
+            "spend_usd": null
+          }
+        },
+        "rewrite-student-text": {
+          "total": 7,
+          "with_skill": {
+            "passed": 7,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": 7,
+            "spend_usd": null
+          }
+        },
+        "supervisor-email": {
+          "total": 7,
+          "with_skill": {
+            "passed": 6,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": 6,
+            "spend_usd": null
+          }
+        },
+        "tone-shift": {
+          "total": 6,
+          "with_skill": {
+            "passed": 6,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": 5,
+            "spend_usd": null
+          }
+        },
+        "cover-letter": {
+          "total": 7,
+          "with_skill": {
+            "passed": 7,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": 6,
+            "spend_usd": null
+          }
+        },
+        "linkedin-post": {
+          "total": 9,
+          "with_skill": {
+            "passed": 9,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": 8,
+            "spend_usd": null
+          }
+        },
+        "literature-review": {
+          "total": 8,
+          "with_skill": {
+            "passed": 8,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": 5,
+            "spend_usd": null
+          }
+        },
+        "rubric-methods": {
+          "total": 8,
+          "with_skill": {
+            "passed": 8,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": 6,
+            "spend_usd": null
+          }
+        },
+        "voice-match": {
+          "total": 7,
+          "with_skill": {
+            "passed": 7,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": 6,
+            "spend_usd": null
+          }
+        },
+        "book-citation": {
+          "total": 5,
+          "with_skill": {
+            "passed": 5,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": 5,
+            "spend_usd": null
+          }
+        }
       }
     },
-    "nonexistent-citation": {
-      "total": 6,
-      "with_skill": {
-        "passed": 6,
-        "tokens": 65637
-      },
-      "without_skill": {
-        "passed": 5,
-        "tokens": 49554
-      }
-    },
-    "data-gap": {
-      "total": 8,
-      "with_skill": {
-        "passed": 8,
-        "tokens": 53445
-      },
-      "without_skill": {
-        "passed": 6,
-        "tokens": 45716
-      }
-    },
-    "lay-summary-limit": {
-      "total": 7,
-      "with_skill": {
-        "passed": 7,
-        "tokens": 85619
-      },
-      "without_skill": {
-        "passed": 4,
-        "tokens": 47483
-      }
-    },
-    "rewrite-student-text": {
-      "total": 7,
-      "with_skill": {
-        "passed": 7,
-        "tokens": 63308
-      },
-      "without_skill": {
-        "passed": 7,
-        "tokens": 44722
-      }
-    },
-    "supervisor-email": {
-      "total": 7,
-      "with_skill": {
-        "passed": 6,
-        "tokens": 52305
-      },
-      "without_skill": {
-        "passed": 6,
-        "tokens": 43696
-      }
-    },
-    "tone-shift": {
-      "total": 6,
-      "with_skill": {
-        "passed": 6,
-        "tokens": 50848
-      },
-      "without_skill": {
-        "passed": 5,
-        "tokens": 43856
-      }
-    },
-    "cover-letter": {
-      "total": 7,
-      "with_skill": {
-        "passed": 7,
-        "tokens": 58017
-      },
-      "without_skill": {
-        "passed": 6,
-        "tokens": 46212
-      }
-    },
-    "linkedin-post": {
-      "total": 9,
-      "with_skill": {
-        "passed": 9,
-        "tokens": 51049
-      },
-      "without_skill": {
-        "passed": 8,
-        "tokens": 45407
-      }
-    },
-    "literature-review": {
-      "total": 8,
-      "with_skill": {
-        "passed": 8,
-        "tokens": 210746
-      },
-      "without_skill": {
-        "passed": 5,
-        "tokens": 74121
-      }
-    },
-    "rubric-methods": {
-      "total": 8,
-      "with_skill": {
-        "passed": 8,
-        "tokens": 101042
-      },
-      "without_skill": {
-        "passed": 6,
-        "tokens": 47240
-      }
-    },
-    "voice-match": {
-      "total": 7,
-      "with_skill": {
-        "passed": 7,
-        "tokens": 50792
-      },
-      "without_skill": {
-        "passed": 6,
-        "tokens": 45126
-      }
-    },
-    "book-citation": {
-      "total": 5,
-      "with_skill": {
-        "passed": 5,
-        "tokens": 79667
-      },
-      "without_skill": {
-        "passed": 5,
-        "tokens": 57975
+    "sonnet": {
+      "rival": "opus",
+      "cases": {
+        "cited-paragraph": {
+          "total": 7,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "nonexistent-citation": {
+          "total": 6,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "data-gap": {
+          "total": 8,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "lay-summary-limit": {
+          "total": 7,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "rewrite-student-text": {
+          "total": 7,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "supervisor-email": {
+          "total": 7,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "tone-shift": {
+          "total": 6,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "cover-letter": {
+          "total": 7,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "linkedin-post": {
+          "total": 9,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "literature-review": {
+          "total": 8,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "rubric-methods": {
+          "total": 8,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "voice-match": {
+          "total": 7,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "book-citation": {
+          "total": 5,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        }
       }
     }
   }
