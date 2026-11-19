@@ -165,7 +165,7 @@ def test_takes_the_median_of_repeated_runs(
 ) -> None:
     iteration = write_iteration(tmp_path)
     case_dir = iteration / "opus" / "first-case"
-    write_run(case_dir, 7, 7, 12, name="with_skill-2")
+    write_run(case_dir, 7, 7, 12, name="with_skill-10")
     assert run_main(iteration, write_reference(tmp_path)) == 1
     output = capsys.readouterr().out
     assert "6.5/7" in output

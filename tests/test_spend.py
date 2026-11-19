@@ -281,3 +281,28 @@ def test_capture_stops_at_the_agent_cap(
     write_transcript(source, "a2", [])
     with pytest.raises(ValueError, match="over 1 agents"):
         capture(source, "a1", tmp_path / "run")
+
+
+def test_prices_nothing_for_a_synthetic_message(tmp_path: Path) -> None:
+    synthetic = {
+        "type": "assistant",
+        "message": {
+            "id": "limit",
+            "model": "<synthetic>",
+            "usage": {"input_tokens": 0, "speed": None},
+        },
+    }
+    entries = [assistant("m1", "model-a", input=2), synthetic]
+    assert spend_of(tmp_path, entries) == 2
+
+
+def test_a_failed_capture_leaves_nothing_behind_so_it_can_be_retried(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "subagents"
+    write_transcript(source, "a1", [spawned("a2")])
+    run = tmp_path / "run"
+    assert main(["capture", "a1", str(run), "--from", str(source)]) == 2
+    assert not (run / "transcripts").exists()
+    write_transcript(source, "a2", [])
+    assert main(["capture", "a1", str(run), "--from", str(source)]) == 0

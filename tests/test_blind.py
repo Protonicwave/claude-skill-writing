@@ -134,3 +134,21 @@ def test_reveal_exits_2_on_a_grade_that_lists_no_expectations(
     for copy in blind_runs(iteration):
         (copy / "grading.json").write_text('{"passed": 3}', encoding="utf-8")
     assert reveal(iteration, key) == 2
+
+
+def test_refuses_a_key_in_a_folder_that_does_not_exist(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    iteration = write_iteration(tmp_path)
+    assert hide(iteration, tmp_path / "gone" / "key.json") == 2
+    assert "gone" in capsys.readouterr().err
+    assert not (iteration / "blind").exists()
+
+
+def test_hides_a_run_whose_repeat_number_has_two_digits(tmp_path: Path) -> None:
+    iteration = write_iteration(tmp_path)
+    outputs = iteration / "sonnet" / "data-gap" / "with_skill-10" / "outputs"
+    outputs.mkdir(parents=True)
+    (outputs / "deliverable.md").write_text("tenth", encoding="utf-8")
+    assert hide(iteration, tmp_path / "key.json") == 0
+    assert len(blind_runs(iteration)) == len(RUNS) + 1

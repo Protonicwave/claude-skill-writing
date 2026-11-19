@@ -31,7 +31,7 @@ from spend import Prices, load_prices, run_spend
 
 DEFAULT_REFERENCE = Path(__file__).resolve().parent / "reference.json"
 # The first run of a case, then its repeats.
-RUN_NAME = re.compile(r"with_skill(-[2-9])?")
+RUN_NAME = re.compile(r"with_skill(-\d+)?")
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,7 +86,8 @@ def _load(path: Path) -> object:
 
 
 def _figures(record: dict[str, object], name: str, where: str) -> Figures:
-    arm = _object(record.get(name), f"{where} {name}")
+    where = f"{where} {name}"
+    arm = _object(record.get(name), where)
     return Figures(_number(arm, "passed", where), _number(arm, "spend_usd", where))
 
 
@@ -177,10 +178,12 @@ def _summed(figures: Iterable[Figures]) -> Figures:
     return Figures(sum(f.passed for f in listed), sum(f.spend for f in listed))
 
 
-def _extra_spend(section: ModelReference, runs: Mapping[str, Figures]) -> float:
-    names = section.budget.cases if section.budget else ()
+def _extra_spend(
+    section: ModelReference, budget: SpendBudget, runs: Mapping[str, Figures]
+) -> float:
     return sum(
-        runs[name].spend - section.cases[name].without_skill.spend for name in names
+        runs[name].spend - section.cases[name].without_skill.spend
+        for name in budget.cases
     )
 
 
@@ -203,7 +206,7 @@ def failures(
             f"{plain.passed:g} without the skill"
         )
     if section.budget is not None:
-        extra = _extra_spend(section, runs)
+        extra = _extra_spend(section, section.budget, runs)
         if extra > section.budget.usd:
             found.append(
                 f"${extra:.2f} extra spend over the ${section.budget.usd:.2f} budget"
@@ -247,9 +250,10 @@ def _table(section: ModelReference, runs: Mapping[str, Figures]) -> list[str]:
     )
     lines.append(_row("total", width, sum(c.total for c in cases.values()), totals))
     if section.budget is not None:
+        budget = section.budget
         lines.append(
-            f"extra spend over no skill on {len(section.budget.cases)} cases: "
-            f"${_extra_spend(section, runs):.2f} (budget ${section.budget.usd:.2f})"
+            f"extra spend over no skill on {len(budget.cases)} cases: "
+            f"${_extra_spend(section, budget, runs):.2f} (budget ${budget.usd:.2f})"
         )
     return lines
 

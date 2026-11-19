@@ -31,6 +31,8 @@ TOKENS_PER_MILLION = 1_000_000
 MAX_TRANSCRIPT_BYTES = 200_000_000
 MAX_TRANSCRIPTS_PER_RUN = 200
 PRICED_SPEED = "standard"
+# Claude Code writes these for a usage limit or an API error; they cost nothing.
+SYNTHETIC_MODEL = "<synthetic>"
 # Claude Code's agent ids are short hex strings; anything else could escape the folder.
 AGENT_ID = re.compile(r"[A-Za-z0-9]{1,64}")
 RATE_NAMES = ("input", "output", "cache_write_5m", "cache_write_1h", "cache_read")
@@ -186,6 +188,8 @@ def read_transcript(path: Path) -> Transcript:
         if entry.get("type") != "assistant":
             continue
         message = _object(entry.get("message"), f"the message at {where}")
+        if message.get("model") == SYNTHETIC_MODEL:
+            continue
         message_id = message.get("id")
         if not isinstance(message_id, str):
             raise ValueError(f"expected a message id at {where}, got {message_id!r}")
@@ -242,9 +246,9 @@ def capture(source: Path, agent_id: str, run_dir: Path) -> list[Path]:
         raise ValueError(f"{target} already holds transcripts")
     pending = [agent_id]
     seen = {agent_id}
-    copied: list[Path] = []
+    found: list[Path] = []
     while pending:
-        if len(copied) == MAX_TRANSCRIPTS_PER_RUN:
+        if len(found) == MAX_TRANSCRIPTS_PER_RUN:
             raise ValueError(f"run spawned over {MAX_TRANSCRIPTS_PER_RUN} agents")
         path = _transcript_path(source, pending.pop())
         if not path.is_file():
@@ -254,9 +258,10 @@ def capture(source: Path, agent_id: str, run_dir: Path) -> list[Path]:
         ]
         seen.update(children)
         pending.extend(children)
-        target.mkdir(parents=True, exist_ok=True)
-        copied.append(Path(shutil.copyfile(path, target / path.name)))
-    return copied
+        found.append(path)
+    # Copy only once the whole tree is found, so a failed capture leaves nothing.
+    target.mkdir(parents=True, exist_ok=True)
+    return [Path(shutil.copyfile(path, target / path.name)) for path in found]
 
 
 def main(argv: list[str] | None = None) -> int:

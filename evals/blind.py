@@ -29,9 +29,9 @@ OUTPUTS = "outputs"
 GRADING = "grading.json"
 LEFT_OUT = ("subagents.json",)
 ID_DIGITS = 8
-RUN_NAME = re.compile(r"with(out)?_skill(-[2-9])?")
+RUN_NAME = re.compile(r"with(out)?_skill(-\d+)?")
 # A run as the key records it: <model>/<case>/<arm>, each part a plain name.
-KEY_RUN = re.compile(r"[\w-][\w.-]*/[\w-][\w.-]*/with(out)?_skill(-[2-9])?")
+KEY_RUN = re.compile(r"[\w-][\w.-]*/[\w-][\w.-]*/with(out)?_skill(-\d+)?")
 
 
 def find_runs(iteration: Path) -> list[Path]:
@@ -39,9 +39,7 @@ def find_runs(iteration: Path) -> list[Path]:
     return sorted(
         path.relative_to(iteration)
         for path in iteration.glob("*/*/*")
-        if path.parts[-3] != BLIND
-        and RUN_NAME.fullmatch(path.name)
-        and (path / OUTPUTS).is_dir()
+        if RUN_NAME.fullmatch(path.name) and (path / OUTPUTS).is_dir()
     )
 
 
@@ -49,6 +47,8 @@ def hide(iteration: Path, key: Path) -> dict[str, str]:
     """Copy each run's outputs under a random id; return and save the key."""
     if key.resolve().is_relative_to(iteration.resolve()):
         raise ValueError(f"the key {key} must lie outside {iteration}")
+    if not key.parent.is_dir():
+        raise ValueError(f"the key's folder {key.parent} does not exist")
     if key.exists():
         raise ValueError(f"{key} already exists; reveal or remove the earlier round")
     blind = iteration / BLIND
