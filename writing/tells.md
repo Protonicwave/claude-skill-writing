@@ -6,7 +6,20 @@ A revision checklist, built from corpus studies of machine-written text and from
 - **Word lists go stale; behaviours do not.** "Delve" fell sharply in 2025 as models changed. The replacement behaviours below hold whatever the current fashion.
 - **Fixing symptoms is not the goal.** A tell usually marks a sentence with no specific claim. Deleting the word without finding the claim leaves an empty sentence. Find the claim.
 
-`scripts/check.py` catches the mechanical cases. Everything else is judgement.
+`scripts/check.py` catches the mechanical cases. Everything else is judgement. Judge each warning it prints: an unknown number is derived and said so, or it goes; a flagged word in its technical sense stays. Over a few paragraphs, run it with `--outline` alone: the first sentences it prints should state the argument. Without code execution, apply this file by hand.
+
+## Voice
+
+Write to these from the first draft; the tables below say what to write instead when a draft misses them.
+
+- Open on the specific problem, object or result, never on the field's importance.
+- One term per concept, glossed in plain words at first use and never swapped for a synonym (`clarity.md`).
+- Numbers over adjectives. Every claim answers "how do you know?".
+- Hedge once, where the uncertainty is, with its size or reason.
+- Report what failed and what could invalidate the result.
+- Sentence length follows the content: no uniform rhythm, no one-line punches.
+- End a paragraph on its newest point, and a report on its limitation or open question.
+- No bold in prose, pleasantries or empty signposting; sentence-case headings.
 
 ## Vocabulary
 
