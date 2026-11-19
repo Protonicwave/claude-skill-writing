@@ -7,7 +7,9 @@ dependencies = []
 
 [dependency-groups]
 dev = [
+    "coverage>=7.15.4",
     "mypy>=2.4.1",
+    "pip-audit>=2.10.1",
     "pytest>=9.2.0",
     "ruff>=0.17.4",
     "vulture>=2.16",
