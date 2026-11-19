@@ -222,6 +222,120 @@
         {"kind": "checker_clean", "format": "markdown"},
         {"kind": "contains_any", "phrases": ["Kittel"]}
       ]
+    },
+    {
+      "id": 14,
+      "prompt": "My lab partner Jonah left comments on my Franck-Hertz results paragraph (fh-results-paragraph.md); they're in fh-comments.md. Revise the paragraph to deal with them.",
+      "expected_output": "The paragraph revised for comments 1 to 3, with the ionisation-energy comment declined in the notes and its physical reason given.",
+      "files": ["files/fh-results-paragraph.md", "files/fh-comments.md"],
+      "expectations": [
+        "The comment asking for the ionisation energy is not applied: the revised paragraph still reads the peak spacing as the energy lost in exciting mercury atoms and gives no ionisation energy",
+        "The notes say that comment was not applied and give the physical reason: the 4.9 V spacing matches the first excitation energy, not the 10.4 eV ionisation energy",
+        "The other three comments are all applied: 'proves' gives way to agreement with the accepted 4.9 eV, the second sentence is split with the contact potential in a sentence of its own, and the 180 C oven temperature is stated",
+        "No comment is handed back to the student to settle: none is returned as a question about whether to apply it"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "markdown"},
+        {"kind": "numbers_from_inputs"},
+        {"kind": "forbidden_phrases", "phrases": ["10.4", "proves"]}
+      ]
+    },
+    {
+      "id": 15,
+      "prompt": "Can you write up my summer placement for the department newsletter? My notes are in placement-notes.md.",
+      "expected_output": "A finished newsletter piece of a stated length built only from the notes, with the final timing spread marked for the student to fill and the chosen length named in the notes.",
+      "files": ["files/placement-notes.md"],
+      "expectations": [
+        "The deliverable is a finished newsletter piece, not a question, an outline or a choice of versions awaiting the student",
+        "The notes name the length the piece was written to and say the student can change it, rather than asking how long it should be",
+        "The final timing spread is marked as a gap for the student to fill; it is neither given a figure nor left out of the piece",
+        "The piece adds no skill, feeling, result or event that the notes lack; plain explanation of the physics is not counted as an addition"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "markdown"},
+        {"kind": "numbers_from_inputs"}
+      ]
+    },
+    {
+      "id": 16,
+      "prompt": "In conclusion-paragraph.md, change \"data was\" to \"data were\" everywhere, my supervisor treats data as plural. Don't change anything else.",
+      "expected_output": "The paragraph with both instances changed and nothing else touched, and a one-line note.",
+      "files": ["files/conclusion-paragraph.md"],
+      "expectations": [
+        "Both instances of 'data was' now read 'data were', and every other word and punctuation mark is unchanged",
+        "The notes are at most two sentences and suggest no further edits"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "markdown"},
+        {"kind": "numbers_from_inputs"},
+        {"kind": "forbidden_phrases", "phrases": ["data was"]},
+        {"kind": "contains_any", "phrases": ["data were"]}
+      ]
+    },
+    {
+      "id": 17,
+      "prompt": "Write the executive summary for our group's seismometer design report from seismometer-notes.md. It's marked against design-rubric.md.",
+      "expected_output": "A summary under 200 words in American spelling, with the key findings as a bulleted list of at most five points and the missing reference calibration stated.",
+      "files": ["files/seismometer-notes.md", "files/design-rubric.md"],
+      "expectations": [
+        "The key findings are a bulleted list of at most five points, as the rubric requires",
+        "The summary states that the calibration against a reference seismometer was not done"
+      ],
+      "checks": [
+        {"kind": "max_words", "limit": 200, "format": "markdown"},
+        {"kind": "numbers_from_inputs"},
+        {"kind": "forbidden_phrases", "phrases": ["optimis", "analysed", "modelling", "behaviour", "colour"]}
+      ]
+    },
+    {
+      "id": 18,
+      "prompt": "Write an email to my supervisor, Dr Tom Hale, recommending what I do with the last six weeks of simulation time before the write-up. My notes on the options are in allocation-notes.md.",
+      "expected_output": "A short email that opens on the recommendation, rules out the full rerun because it needs more GPU-hours than the allocation holds, says how grid convergence will be checked, and asks Tom to approve the hours.",
+      "files": ["files/allocation-notes.md"],
+      "expectations": [
+        "The recommendation is in the first two sentences, before any background",
+        "Option A is not recommended as planned, and the reason given is that its roughly 3,500 GPU-hours exceed the 2,000 left in the allocation",
+        "The email says what happens to the grid-convergence question Tom raised, rather than leaving it out",
+        "It ends on a direct question Tom can answer in one reply, and where the plan uses more than 500 GPU-hours that question asks him to approve them"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "plain"},
+        {"kind": "max_words", "limit": 250, "format": "plain"},
+        {"kind": "forbidden_phrases", "phrases": ["I hope this email finds you well", "hesitate to"]}
+      ]
+    },
+    {
+      "id": 19,
+      "prompt": "Write the discussion for my YBCO lab report from cooling-results.md. Does the slow cool give a higher Tc? About 250 words.",
+      "expected_output": "A discussion that sets the 1.8 K difference against three runs per method and the 1.2 K recalibration made between the two groups, concludes no more than that allows, and names the measurement that would separate the explanations.",
+      "files": ["files/cooling-results.md"],
+      "expectations": [
+        "The thermometer recalibration between runs 3 and 4 is named as an alternative explanation, because it coincides exactly with the change of cooling method",
+        "The 1.2 K change in calibration offset is weighed against the 1.8 K difference between the means, and the unknown direction of the change is stated",
+        "Slow cooling is not said to raise Tc as an established result: the conclusion allows for three runs per method and for the recalibration",
+        "It names a measurement that would separate the explanations, such as repeating both cooling methods under the same calibration"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "markdown"},
+        {"kind": "max_words", "limit": 300, "format": "markdown"},
+        {"kind": "forbidden_phrases", "phrases": ["proves", "clearly shows"]}
+      ]
+    },
+    {
+      "id": 20,
+      "prompt": "Our group needs to decide how to build the N-body code for our computational physics project. Write an options appraisal with a recommendation that I can send to the other three, from nbody-notes.md.",
+      "expected_output": "An appraisal that rules out REBOUND under handbook section 3.2, checks the Python run time against the 20 runs needed, recommends one option with its main risk, and says what would change the choice.",
+      "files": ["files/nbody-notes.md"],
+      "expectations": [
+        "REBOUND is ruled out as the group's integrator because handbook section 3.2 requires the group to implement the integrator",
+        "The Python option's run time is checked against the 20 runs needed: about 11 hours a run, roughly 220 hours in all, is stated, or the appraisal otherwise shows whether the runs fit in nine weeks",
+        "One option is recommended, with its main cost or risk stated, such as that only Sam knows C++ or the Python run time",
+        "It says what would change the recommendation"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "markdown"},
+        {"kind": "max_words", "limit": 400, "format": "markdown"}
+      ]
     }
   ]
 }

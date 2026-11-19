@@ -73,7 +73,7 @@ uv export --format pylock.toml --no-emit-project -o <scratch>/pylock.toml && uv 
 
 ### Evals
 
-`evals/evals.json` holds thirteen cases in skill-creator's format, with their input files in `evals/files/`. Each case lists judgement expectations, which a grader reads the output against, and programmatic checks: checker errors, word limits (counted on the prose by `check.py --max-words`, as the skill counts them), hashtag limits, banned phrases, required gap markers, the share of one-sentence paragraphs, and whether every number in the output appears in the prompt or input files. Cases 10 to 13 are ones the base model finds hard: a literature review over four real papers with two misremembered details, a methods section marked against a rubric, a reflection that must match a sample of the student's writing, and a citation to a book with no DOI.
+`evals/evals.json` holds twenty cases in skill-creator's format, with their input files in `evals/files/`. Each case lists judgement expectations, which a grader reads the output against, and programmatic checks: checker errors, word limits (counted on the prose by `check.py --max-words`, as the skill counts them), hashtag limits, banned phrases, required gap markers, the share of one-sentence paragraphs, and whether every number in the output appears in the prompt or input files. Cases 10 to 13 are ones the base model finds hard: a literature review over four real papers with two misremembered details, a methods section marked against a rubric, a reflection that must match a sample of the student's writing, and a citation to a book with no DOI. Cases 14 to 17 score the choices the skill makes for itself: reviewer comments of which one is wrong, a request that leaves its length unstated and one figure missing, an edit of one word in two places whose spend is what counts, and a rubric that overrides the skill's own style. Cases 18 to 20 score analysis and decisions the student asks for: a recommendation that one constraint in the notes rules out, results whose difference coincides with a recalibration, and an options appraisal that a handbook rule narrows.
 
 Each case runs in two arms in skill-creator's layout: `with_skill` follows the skill, and `without_skill` runs the same model with no skill, which shows what the skill adds and what it costs. Both arms run on each model under test, `opus` and `sonnet`. Run each case in a fresh subagent with its model set explicitly, with no access to `evals.json`, given this brief:
 
@@ -114,7 +114,7 @@ Grade the judgement expectations blind, so the grader knows neither the arm nor 
 uv run python evals/blind.py hide evals/workspace/iteration-5 --key <path outside the iteration>
 ```
 
-Give an Opus subagent per case that case's blind folder and its expectations from `evals.json`, and nothing else; it writes each copy's grades to `grading.json` in that copy, as expectations with `text`, `passed` and `evidence`. Then map the grades back, score the programmatic checks and compare each model with the reference:
+Give an Opus subagent per case that case's blind folder, its prompt and expectations from `evals.json` and its input files, and nothing else; it writes each copy's grades to `grading.json` in that copy, as expectations with `text`, `passed` and `evidence`. Then map the grades back, score the programmatic checks and compare each model with the reference:
 
 ```
 uv run python evals/blind.py reveal evals/workspace/iteration-5 --key <the key>

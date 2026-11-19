@@ -197,6 +197,83 @@
             "passed": 5,
             "spend_usd": null
           }
+        },
+        "reviewer-comments": {
+          "total": 7,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "newsletter-defaults": {
+          "total": 6,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "trivial-edit": {
+          "total": 6,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "rubric-conflict": {
+          "total": 5,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "recommendation-email": {
+          "total": 7,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "results-confound": {
+          "total": 7,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "options-appraisal": {
+          "total": 6,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
         }
       }
     },
@@ -337,6 +414,83 @@
         },
         "book-citation": {
           "total": 5,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "reviewer-comments": {
+          "total": 7,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "newsletter-defaults": {
+          "total": 6,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "trivial-edit": {
+          "total": 6,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "rubric-conflict": {
+          "total": 5,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "recommendation-email": {
+          "total": 7,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "results-confound": {
+          "total": 7,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "options-appraisal": {
+          "total": 6,
           "with_skill": {
             "passed": null,
             "spend_usd": null
