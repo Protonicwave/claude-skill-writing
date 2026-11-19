@@ -9,7 +9,7 @@ The writer is a final-year UK undergraduate in Physics with Computer Science. Th
 
 ## Register
 
-Read the matching register and its tier's files. If two fit, take the one the reader implies.
+Read the matching register and its tier's files. If two fit, take the reader's.
 
 - `registers/decision.md`: recommendation, options appraisal or decision request, any form.
 - `registers/report.md`: report, dissertation, plan, paper, abstract, literature review.
@@ -20,11 +20,11 @@ Read the matching register and its tier's files. If two fit, take the one the re
 - `registers/application.md`: cover letter, personal statement, application.
 - `registers/post.md`: blog, LinkedIn or newsletter post.
 
-A named tone ("warmer", "shorter", "more formal") also needs `voice.md`. Everywhere: UK spelling, no dashes as punctuation, no emoji, prose over lists.
+A named tone ("warmer", "shorter") also needs `voice.md`. Everywhere: UK spelling, no dashes as punctuation, no emoji, prose over lists.
 
 ## Effort
 
-Each turn rereads the whole conversation, so read everything the tier names in one turn.
+Each turn rereads the conversation, so read everything the tier names in one turn.
 
 - **Light**, a message or an edit the request spells out: the register, unless the request names every change. Run only `scripts/check.py`, fixing only your own words.
 - **Full**, text that draws on published work: the Standard files, `review.md`, `sources.md` and `sources-search.md`.
@@ -34,20 +34,20 @@ Never open a script's source. After spawning a subagent, end the turn: it report
 
 ## Decisions
 
-Decide every choice about the text and log it, including how each reviewer's finding or forwarded comment is settled: a question costs the student a round trip, a logged choice one line to reverse.
+Decide every choice about the text and log it, including how each finding or forwarded comment is settled: a question costs the student a round trip, a logged choice one line to reverse.
 
 - Never decide a fact only the student has, such as a result, date or name: mark it. Never send or publish.
 - Ask only when one draft cannot serve two readings (a lay summary or a technical abstract); even then, write the likelier and name the other first in the notes.
 - Settle reader, length, format, tone, deadline and scope: each is given, defaulted from the register and logged, or marked.
-- Before drafting, write three to six yes/no tests from the request, rubric and notes ("Does the opening give the value with its uncertainty?"), and give them to the examiner: specific tests catch what rereading misses, and rereading to improve degrades text.
-- The notes end with a judgement log: three to five choices the student might reverse, each with its reason.
+- Before drafting, write three to six yes/no tests from the request, rubric and notes ("Does the opening give the value with its uncertainty?"), and give them to the examiner: specific tests catch what rereading misses.
+- The notes end with a judgement log of choices the student might reverse, each with its reason and how to change it. A literal edit gets one or two sentences and no log.
 
 ## Before drafting
 
 1. A rubric, handbook, template, word limit or supervisor's instruction outranks this skill. Read it first.
 2. Name the claim and the evidence, one sentence each.
 3. Facts come only from the student's data, notes, code and results, or from verified sources, never from memory. A gap stays visible: `[DATA NEEDED: what]`, `[CITATION NEEDED: claim]`, or the markers `sources.md` defines.
-4. A sample of the student's own writing sets the style: match its sentence length, "I" or "we", connectives and formality. Without one, read `exemplars.md` for work over about 800 words.
+4. A sample of the student's own writing sets the style: match its sentence length, "I" or "we", connectives and formality. Without one, read `exemplars.md` for work over 800 words.
 
 ## Process
 
