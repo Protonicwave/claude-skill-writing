@@ -274,6 +274,28 @@
             "passed": 5,
             "spend_usd": 0.2863
           }
+        },
+        "related-work-search": {
+          "total": 8,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "novelty-claim": {
+          "total": 8,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
         }
       },
       "deep_research": {
@@ -281,7 +303,9 @@
           "cited-paragraph",
           "nonexistent-citation",
           "literature-review",
-          "book-citation"
+          "book-citation",
+          "related-work-search",
+          "novelty-claim"
         ],
         "gap_search_budget": {
           "case": "literature-review",
@@ -512,6 +536,28 @@
             "passed": 5,
             "spend_usd": 0.0981
           }
+        },
+        "related-work-search": {
+          "total": 8,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
+        },
+        "novelty-claim": {
+          "total": 8,
+          "with_skill": {
+            "passed": null,
+            "spend_usd": null
+          },
+          "without_skill": {
+            "passed": null,
+            "spend_usd": null
+          }
         }
       },
       "deep_research": {
@@ -519,7 +565,9 @@
           "cited-paragraph",
           "nonexistent-citation",
           "literature-review",
-          "book-citation"
+          "book-citation",
+          "related-work-search",
+          "novelty-claim"
         ],
         "gap_search_budget": {
           "case": "literature-review",
