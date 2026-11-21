@@ -152,3 +152,27 @@ def test_hides_a_run_whose_repeat_number_has_two_digits(tmp_path: Path) -> None:
     (outputs / "deliverable.md").write_text("tenth", encoding="utf-8")
     assert hide(iteration, tmp_path / "key.json") == 0
     assert len(blind_runs(iteration)) == len(RUNS) + 1
+
+
+def test_hides_deep_research_runs_and_maps_their_grades_back(tmp_path: Path) -> None:
+    iteration = write_iteration(tmp_path)
+    arms = ("deep_research", "deep_research-2")
+    for arm in arms:
+        outputs = iteration / "opus" / "data-gap" / arm / "outputs"
+        outputs.mkdir(parents=True)
+        (outputs / "deliverable.md").write_text(f"text of {arm}", encoding="utf-8")
+    key = tmp_path / "key.json"
+    assert hide(iteration, key) == 0
+    copies = blind_runs(iteration)
+    assert len(copies) == len(RUNS) + len(arms)
+    for copy in copies:
+        assert "deep" not in copy.name
+        text = (copy / "deliverable.md").read_text(encoding="utf-8")
+        grading = {"expectations": [{"text": text, "passed": True, "evidence": "e"}]}
+        (copy / "grading.json").write_text(json.dumps(grading), encoding="utf-8")
+    assert reveal(iteration, key) == 0
+    for arm in arms:
+        grading = json.loads(
+            (iteration / "opus" / "data-gap" / arm / "grading.json").read_text("utf-8")
+        )
+        assert grading["expectations"][0]["text"] == f"text of {arm}"
