@@ -7,6 +7,7 @@ A skill for Claude that writes and edits prose people read (reports, dissertatio
 - `writing/`: the skill itself. `SKILL.md` routes each request to a register in `writing/registers/` and points to the shared rules (`tells.md`, `clarity.md`, `sources.md`, `sources-search.md`, `exemplars.md`), the tone dials (`voice.md`) and the fresh-context review passes (`review.md`).
 - `writing/scripts/check.py`: the draft checker, standard library only.
 - `writing/scripts/verify.py`: the source verifier, standard library only.
+- `writing/scripts/gap_search.py`: the search for published work that closes a stated gap, built on the verifier.
 - `install.py`: installs the skill and builds the upload zip.
 - `evals/`: the eval set, its input files, the grader, and the scripts that price runs from their transcripts, hide the arm from graders and compare runs with the reference.
 - `tests/`: checker rules, verifier, grader, eval scripts, skill structure and installer.
@@ -52,6 +53,14 @@ python writing/scripts/verify.py --draft report.tex sources.jsonl
 
 Each input line is one source as the draft cites it: a key, a DOI or arXiv ID, the title, the authors' surnames, the year, optionally volume and pages, and the quoted passages each claim rests on. `writing/sources.md` gives the format. For each source it compares the cited fields with the registry record, looks for retractions and newer arXiv versions, and searches the abstract (or a saved full text) for each quote word for word. It prints the verification log as a Markdown table, a row as each source finishes. It exits 0 if every source is verified, 1 if any is not, 2 if the input cannot be read and 3 if the run stops on a fault. It needs network access, checks at most 50 sources per run and stops checking after five minutes. DOIs are looked up in Crossref, then DataCite when Crossref has no record; DOIs in neither are reported unverified. When a quote is not found, its row links to a free full text if OpenAlex or arXiv has one. Registry responses are cached for 24 hours in a file named after the sources file, such as `sources.cache.json`, beside it, so a rerun after editing a draft makes no repeat requests. `--refresh` ignores the cache and fetches again. Standard input keeps no cache. `--bib PATH` also writes a BibTeX file with an entry for each source whose cited fields all matched (status VERIFIED or CLAIM NOT CHECKED). Each entry is built from the registry record, not from the cited fields, so no reference is typed from memory. Crossref and DataCite text is escaped for LaTeX, arXiv titles and names are kept as the LaTeX they were submitted in, and the file is UTF-8. It is written after the checks, also when the run stops on a fault or at the time limit, and a line on standard error says how many sources were written and which were left out. A path in a folder that does not exist exits 2 before any request, and a write failure exits 3. `--draft PATH` appends a draft audit to the log: cite keys (LaTeX `\cite` commands or Pandoc `[@key]`) missing from the sources or attached to a source that failed, which are errors and make the exit code 1; cited sources whose claim was not checked, and numbers in a citing sentence that no quote of its sources contains, which are warnings; open gap markers; and sources never cited. An unreadable draft exits 2 before any request.
 
+The gap search looks for published work that already does what a gap claim says has not been done:
+
+```
+python writing/scripts/gap_search.py --log notes/gap-search.md "neural network sampler Ising model" "generative model Monte Carlo spin systems" "self-learning Monte Carlo"
+```
+
+It takes exactly three queries of two to eight words and sends each once to the OpenAlex search and once to the arXiv search, where every word must match. It keeps at most five hits from each answer and lists a work found more than once, or held by both registries, once. Each hit prints on one line with its identifiers, year, title, the first 300 characters of its abstract and the requests that found it; the output stops at 12,000 characters, and the rest are only in the log. The log is Markdown: the date, the queries, each request's URL and outcome, and every hit. Responses share the verifier's 24-hour cache, `sources.cache.json` beside the log. No request starts after 120 seconds. It exits 0 when every request was answered, 1 when a registry was unavailable, sent a malformed answer or a request was not started in time (the other hits still print), 2 for invalid queries or a log folder that does not exist, and 3 when the log cannot be written.
+
 ## Development
 
 ```
@@ -62,11 +71,11 @@ uv run mypy
 uv run vulture writing/scripts install.py tests evals --min-confidence 80
 ```
 
-The eval scripts that price, hide and compare runs need full branch coverage, and the locked dependencies are audited:
+The eval scripts that price, hide and compare runs, and the gap search, need full branch coverage, and the locked dependencies are audited:
 
 ```
-uv run coverage run --branch --source=evals -m pytest
-uv run coverage report --show-missing --fail-under=100 --include=evals/spend.py,evals/compare.py,evals/blind.py
+uv run coverage run --branch --source=evals,writing/scripts -m pytest
+uv run coverage report --show-missing --fail-under=100 --include=evals/spend.py,evals/compare.py,evals/blind.py,writing/scripts/gap_search.py
 uv run coverage erase
 uv export --format pylock.toml --no-emit-project -o <scratch>/pylock.toml && uv run pip-audit --locked <scratch>
 ```
