@@ -275,6 +275,19 @@
             "spend_usd": 0.2863
           }
         }
+      },
+      "deep_research": {
+        "cases": [
+          "cited-paragraph",
+          "nonexistent-citation",
+          "literature-review",
+          "book-citation"
+        ],
+        "gap_search_budget": {
+          "case": "literature-review",
+          "baseline_usd": 2.7564,
+          "max_share_of_rival": 0.25
+        }
       }
     },
     "sonnet": {
@@ -499,6 +512,19 @@
             "passed": 5,
             "spend_usd": 0.0981
           }
+        }
+      },
+      "deep_research": {
+        "cases": [
+          "cited-paragraph",
+          "nonexistent-citation",
+          "literature-review",
+          "book-citation"
+        ],
+        "gap_search_budget": {
+          "case": "literature-review",
+          "baseline_usd": 0.2951,
+          "max_share_of_rival": 0.25
         }
       }
     }

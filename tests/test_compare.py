@@ -448,9 +448,7 @@ def _share_above_one(document: Document) -> None:
 
 
 def _no_baseline(document: Document) -> None:
-    del document["models"]["opus"]["deep_research"]["gap_search_budget"][
-        "baseline_usd"
-    ]
+    del document["models"]["opus"]["deep_research"]["gap_search_budget"]["baseline_usd"]
 
 
 @pytest.mark.parametrize(

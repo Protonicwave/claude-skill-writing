@@ -108,6 +108,37 @@ Reply with one line: done, or failed and why.
 
 For the no-skill arm, the brief speaks of a writing task rather than a skill, drops "following the skill", and replaces the skill paragraph with "Skill: none. Do not use the Skill tool, and do not open anything under <repo>/writing/ or ~/.claude/skills/." Each case directory also holds its `eval_metadata.json`. A case whose spend has varied by more than 25% between runs runs twice per arm, the second time into `<arm>-2/`, and the median of the two counts.
 
+The research cases (`cited-paragraph`, `nonexistent-citation`, `literature-review` and `book-citation` so far) also run a `deep_research` arm, `deep_research-2/` and so on for repeats, in the same iteration and layout. It runs the same model with Anthropic's deep-research skill in place of this one, and `compare.py --against deep_research` measures the skill against it. Run each in a fresh subagent with its model set explicitly, given this brief:
+
+```
+You are running one test case of a research and writing comparison. Act on the request below exactly as you would for a real user.
+
+Skill: use the deep-research skill (invoke it with the Skill tool, skill name anthropic-skills:deep-research) for the research. Do not use the writing skill, and do not open anything under <repo>/writing/ or ~/.claude/skills/writing. Do the research the deep-research skill calls for, then write the deliverable the user asked for.
+
+The user's request, in their words:
+"<prompt>"
+
+The user's files: <absolute paths, or none>
+
+Output directory: <repo>/evals/workspace/iteration-<N>/<model>/<eval name>/deep_research/outputs/
+- Save the text you would deliver, exactly as delivered, to outputs/deliverable.md.
+- Save what you would tell the user after the text (open markers, judgement calls, where logs are) to outputs/notes.md.
+- Save every other file you create (sources, research notes, saved pages, drafts) in outputs/.
+
+There is no user to answer questions. Where you would ask, take the most reasonable reading and record the question in notes.md. Do not open anything else under <repo>/evals/ apart from the user's files above.
+
+Reply with one line: done, or failed and why. Also say whether you could spawn subagents for the research.
+```
+
+Capture, hide and grade these runs as the others: `blind.py` hides `deep_research` runs under ids like any other, and the grade glob becomes `*/*/*_skill* */*/deep_research*`. Then:
+
+```
+uv run python evals/compare.py evals/workspace/iteration-9 --model opus --against deep_research
+uv run python evals/compare.py evals/workspace/iteration-9 --model sonnet --against deep_research
+```
+
+For each case in the model's `deep_research` entry in `evals/reference.json`, it prints the median score and spend of the `with_skill` runs beside those of the `deep_research` runs, and exits 1 when the skill scores below deep research or spends the same or more. It also prints the gap search's extra spend beside its budget: the skill's median spend on the entry's `gap_search_budget` case, less `baseline_usd` (the figure before the gap search existed), may be at most `max_share_of_rival` of deep research's median spend on that case, or the run exits 1. Spend leaves out a web search's own fee, so deep research's figure is understated.
+
 When a run finishes, copy its transcript, and those of every subagent it spawned, into its run directory. The launch result gives the run's agent id, and Claude Code keeps the transcripts in `~/.claude/projects/<project>/<session>/subagents/`:
 
 ```
@@ -127,7 +158,7 @@ Give an Opus subagent per case that case's blind folder, its prompt and expectat
 
 ```
 uv run python evals/blind.py reveal evals/workspace/iteration-5 --key <the key>
-uv run python evals/grade.py evals/workspace/iteration-5/*/*/*_skill*
+uv run python evals/grade.py evals/workspace/iteration-5/*/*/*_skill* evals/workspace/iteration-5/*/*/deep_research*
 uv run python evals/compare.py evals/workspace/iteration-5 --model opus
 uv run python evals/compare.py evals/workspace/iteration-5 --model sonnet
 ```

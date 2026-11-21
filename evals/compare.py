@@ -1,6 +1,7 @@
 """Compare an eval iteration's with-skill runs with the reference for one model.
 
 Usage: python evals/compare.py ITERATION_DIR --model MODEL [--reference PATH]
+                               [--against deep_research]
 
 For each case in the model's section of the reference, reads every run under
 ITERATION_DIR/<model>/<case>/: with_skill/, and with_skill-2/ and so on for
@@ -8,6 +9,14 @@ a case run more than once. A run's score comes from its grading.json and its
 spend from its captured transcripts, subagents included (see spend.py). Where
 a case has several runs, the median of each figure counts. The no-skill arm
 is measured once per model and kept in the reference.
+
+With --against deep_research the run instead compares, on each case the
+model's deep_research entry lists, the median with_skill figures with the
+median of the deep_research/, deep_research-2/ and later runs of the same
+iteration. It fails when the skill scores below deep research or spends no
+less on any case, and when the gap search's extra spend (the skill's median
+spend on the budget case less its baseline_usd) exceeds max_share_of_rival of
+deep research's median spend on that case.
 
 The run fails when a case scores below its reference, when the total score
 does not beat the model's own no-skill arm, when the extra spend over that arm
@@ -30,8 +39,7 @@ from grade import read_capped_text
 from spend import Prices, load_prices, run_spend
 
 DEFAULT_REFERENCE = Path(__file__).resolve().parent / "reference.json"
-# The first run of a case, then its repeats.
-RUN_NAME = re.compile(r"with_skill(-\d+)?")
+DEEP_RESEARCH = "deep_research"
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,10 +62,24 @@ class SpendBudget:
 
 
 @dataclass(frozen=True, slots=True)
+class GapSearchBudget:
+    case: str
+    baseline_usd: float
+    max_share_of_rival: float
+
+
+@dataclass(frozen=True, slots=True)
+class DeepResearch:
+    cases: tuple[str, ...]
+    budget: GapSearchBudget
+
+
+@dataclass(frozen=True, slots=True)
 class ModelReference:
     cases: dict[str, CaseReference]
     budget: SpendBudget | None
     rival: str | None
+    deep_research: DeepResearch | None = None
 
 
 def _object(value: object, where: object) -> dict[str, object]:
@@ -111,6 +133,35 @@ def _budget(section: dict[str, object], model: str) -> SpendBudget | None:
     return SpendBudget(_number(record, "usd", f"{model} max_extra_spend"), tuple(cases))
 
 
+def _deep_research(
+    section: dict[str, object], model: str, listed: set[str]
+) -> DeepResearch | None:
+    if DEEP_RESEARCH not in section:
+        return None
+    where = f"{model} {DEEP_RESEARCH}"
+    record = _object(section[DEEP_RESEARCH], where)
+    cases = record.get("cases")
+    if not isinstance(cases, list) or not all(isinstance(c, str) for c in cases):
+        raise ValueError(f"expected {where} to list case names")
+    if not cases or not set(cases) <= listed:
+        raise ValueError(f"{where} names a case the section does not list")
+    spend = _object(record.get("gap_search_budget"), f"{where} gap_search_budget")
+    case = spend.get("case")
+    if case not in cases:
+        raise ValueError(f"{where} gap_search_budget names a case it does not compare")
+    budget = GapSearchBudget(
+        str(case),
+        _number(spend, "baseline_usd", f"{where} gap_search_budget"),
+        _number(spend, "max_share_of_rival", f"{where} gap_search_budget"),
+    )
+    if not 0 < budget.max_share_of_rival <= 1:
+        raise ValueError(
+            f"expected {where} max_share_of_rival in (0, 1], "
+            f"got {budget.max_share_of_rival:g}"
+        )
+    return DeepResearch(tuple(cases), budget)
+
+
 def _model(model: str, value: object) -> ModelReference:
     section = _object(value, f"model {model}")
     cases = {
@@ -125,7 +176,9 @@ def _model(model: str, value: object) -> ModelReference:
     rival = section.get("rival")
     if rival is not None and not isinstance(rival, str):
         raise ValueError(f"expected {model} rival to name a model, got {rival!r}")
-    return ModelReference(cases, budget, rival)
+    return ModelReference(
+        cases, budget, rival, _deep_research(section, model, set(cases))
+    )
 
 
 def load_reference(path: Path) -> dict[str, ModelReference]:
@@ -158,15 +211,18 @@ def _run(run: Path, case: CaseReference, prices: Prices) -> Figures:
     return Figures(_count(summary, "passed", run), run_spend(run, prices))
 
 
-def load_case(case_dir: Path, case: CaseReference, prices: Prices) -> Figures:
-    """The median score and spend of a case's with-skill runs."""
+def load_case(
+    case_dir: Path, case: CaseReference, prices: Prices, arm: str = "with_skill"
+) -> Figures:
+    """The median score and spend of a case's runs of one arm, repeats included."""
+    name = re.compile(rf"{arm}(-\d+)?")
     runs = sorted(
         path
-        for path in case_dir.glob("with_skill*")
-        if path.is_dir() and RUN_NAME.fullmatch(path.name)
+        for path in case_dir.glob(f"{arm}*")
+        if path.is_dir() and name.fullmatch(path.name)
     )
     if not runs:
-        raise ValueError(f"{case_dir} has no with_skill run")
+        raise ValueError(f"{case_dir} has no {arm} run")
     figures = [_run(run, case, prices) for run in runs]
     return Figures(
         median(item.passed for item in figures), median(item.spend for item in figures)
@@ -258,6 +314,87 @@ def _table(section: ModelReference, runs: Mapping[str, Figures]) -> list[str]:
     return lines
 
 
+def _gap_search_spend(
+    budget: GapSearchBudget, skill: Mapping[str, Figures], rival: Mapping[str, Figures]
+) -> tuple[float, float]:
+    """The skill's spend over its baseline on the budget case, and the limit."""
+    return (
+        skill[budget.case].spend - budget.baseline_usd,
+        budget.max_share_of_rival * rival[budget.case].spend,
+    )
+
+
+def against_failures(
+    section: DeepResearch,
+    skill: Mapping[str, Figures],
+    rival: Mapping[str, Figures],
+    totals: Mapping[str, int],
+) -> list[str]:
+    """Name each case the skill scores below or spends no less on, then the budget."""
+    found = []
+    for name in section.cases:
+        if skill[name].passed < rival[name].passed:
+            found.append(
+                f"{name} scored {skill[name].passed:g} of {totals[name]}, "
+                f"deep research {rival[name].passed:g}"
+            )
+        if skill[name].spend >= rival[name].spend:
+            found.append(
+                f"{name} spent ${skill[name].spend:.2f}, not below "
+                f"deep research's ${rival[name].spend:.2f}"
+            )
+    extra, limit = _gap_search_spend(section.budget, skill, rival)
+    if extra > limit:
+        found.append(
+            f"${extra:.2f} gap search spend over the ${limit:.2f} budget "
+            f"on {section.budget.case}"
+        )
+    return found
+
+
+def _against_table(
+    section: DeepResearch,
+    totals: Mapping[str, int],
+    skill: Mapping[str, Figures],
+    rival: Mapping[str, Figures],
+) -> list[str]:
+    width = max(len(name) for name in [*section.cases, "case"])
+    header = ("score", "deep res.", "spend", "deep res.")
+    lines = [f"{'case':<{width}}  " + "  ".join(f"{cell:>9}" for cell in header)]
+    lines.extend(
+        _row(name, width, totals[name], (skill[name], rival[name]))
+        for name in section.cases
+    )
+    extra, limit = _gap_search_spend(section.budget, skill, rival)
+    lines.append(
+        f"gap search spend on {section.budget.case}: ${extra:.2f} "
+        f"(budget ${limit:.2f}, {section.budget.max_share_of_rival:.0%} "
+        f"of deep research's ${rival[section.budget.case].spend:.2f})"
+    )
+    return lines
+
+
+def _compare_with_deep_research(
+    iteration: Path, model: str, models: Mapping[str, ModelReference], prices: Prices
+) -> int:
+    section = models[model]
+    entry = section.deep_research
+    if entry is None:
+        raise ValueError(f"{model} has no {DEEP_RESEARCH} entry in the reference")
+    skill = {}
+    rival = {}
+    for name in entry.cases:
+        case_dir = iteration / model / name
+        skill[name] = load_case(case_dir, section.cases[name], prices)
+        rival[name] = load_case(case_dir, section.cases[name], prices, DEEP_RESEARCH)
+    totals = {name: section.cases[name].total for name in entry.cases}
+    print("\n".join(_against_table(entry, totals, skill, rival)))
+    found = against_failures(entry, skill, rival, totals)
+    for failure in found:
+        print(f"FAIL: {failure}")
+    return 1 if found else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Compare an eval iteration with the reference for one model."
@@ -267,12 +404,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--reference", type=Path, default=DEFAULT_REFERENCE, help="the reference"
     )
+    parser.add_argument(
+        "--against",
+        choices=(DEEP_RESEARCH,),
+        help="compare with the deep-research runs of the same iteration instead",
+    )
     args = parser.parse_args(argv)
     try:
         models = load_reference(args.reference)
         if args.model not in models:
             raise ValueError(f"{args.reference} has no section for {args.model}")
         prices = load_prices(args.reference)
+        if args.against:
+            return _compare_with_deep_research(
+                args.iteration, args.model, models, prices
+            )
         section = models[args.model]
         runs = {
             name: load_case(args.iteration / args.model / name, case, prices)
