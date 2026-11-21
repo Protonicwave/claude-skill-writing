@@ -307,3 +307,175 @@ def test_exits_2_on_a_malformed_reference_field(
     record[path[-1]] = value
     reference = write_reference(tmp_path, document)
     assert run_main(write_iteration(tmp_path), reference) == 2
+
+
+# Deep research on first-case spends 20 and scores 6; on second-case, 12 and 3.
+# The gap search's budget is a quarter of 20 over a baseline of 6: five dollars.
+RIVAL_FIGURES = {"first-case": (6, 20), "second-case": (3, 12)}
+
+
+def deep_research_document() -> Document:
+    document = reference_document()
+    document["models"]["opus"]["deep_research"] = {
+        "cases": ["first-case", "second-case"],
+        "gap_search_budget": {
+            "case": "first-case",
+            "baseline_usd": 6,
+            "max_share_of_rival": 0.25,
+        },
+    }
+    return document
+
+
+def write_rival_iteration(tmp_path: Path) -> Path:
+    """The skill at its reference, and three deep-research runs of each case."""
+    iteration = write_iteration(tmp_path)
+    for name, (passed, spend) in RIVAL_FIGURES.items():
+        case_dir = iteration / "opus" / name
+        total = FIGURES["opus"][name][0]
+        write_run(case_dir, passed, total, spend, name="deep_research")
+        write_run(case_dir, passed, total, spend, name="deep_research-2")
+        write_run(case_dir, 0, total, spend * 10, name="deep_research-3")
+    return iteration
+
+
+def run_against(iteration: Path, document: object = None, model: str = "opus") -> int:
+    reference = write_reference(
+        iteration.parent,
+        deep_research_document() if document is None else document,
+    )
+    arguments = [str(iteration), "--model", model, "--reference", str(reference)]
+    return main([*arguments, "--against", "deep_research"])
+
+
+def test_against_passes_on_the_median_of_runs_and_prints_the_budget(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    iteration = write_rival_iteration(tmp_path)
+    write_run(iteration / "opus" / "first-case", 0, 7, 90, name="with_skill-2")
+    write_run(iteration / "opus" / "first-case", 7, 7, 10, name="with_skill-3")
+    assert run_against(iteration) == 0
+    output = capsys.readouterr().out
+    assert "gap search spend on first-case: $4.00 (budget $5.00" in output
+    assert "6/7" in output
+
+
+def test_against_fails_naming_a_case_the_skill_scores_lower_on(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    iteration = write_rival_iteration(tmp_path)
+    write_run(iteration / "opus" / "second-case", 2, 3, 8)
+    assert run_against(iteration) == 1
+    assert "second-case scored 2 of 3, deep research 3" in capsys.readouterr().out
+
+
+def test_against_fails_when_a_case_spends_the_same_as_deep_research(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    iteration = write_rival_iteration(tmp_path)
+    write_run(iteration / "opus" / "second-case", 3, 3, 12)
+    assert run_against(iteration) == 1
+    assert (
+        "second-case spent $12.00, not below deep research's $12.00"
+        in capsys.readouterr().out
+    )
+
+
+def test_against_fails_when_the_gap_search_costs_more_than_its_budget(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    iteration = write_rival_iteration(tmp_path)
+    write_run(iteration / "opus" / "first-case", 6, 7, 12)
+    assert run_against(iteration) == 1
+    assert (
+        "$6.00 gap search spend over the $5.00 budget on first-case"
+        in capsys.readouterr().out
+    )
+
+
+def test_against_exits_2_naming_a_case_with_no_deep_research_run(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    iteration = write_rival_iteration(tmp_path)
+    for run in (iteration / "opus" / "second-case").glob("deep_research*"):
+        shutil.rmtree(run)
+    assert run_against(iteration) == 2
+    assert "second-case" in capsys.readouterr().err
+
+
+def test_against_exits_2_for_a_model_with_no_deep_research_entry(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    iteration = write_rival_iteration(tmp_path)
+    assert run_against(iteration, model="sonnet") == 2
+    assert "sonnet has no deep_research entry" in capsys.readouterr().err
+
+
+def test_against_exits_2_when_the_expectation_counts_differ(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    iteration = write_rival_iteration(tmp_path)
+    write_run(iteration / "opus" / "first-case", 6, 9, 20, name="deep_research")
+    assert run_against(iteration) == 2
+    assert "9 expectations, reference has 7" in capsys.readouterr().err
+
+
+def _unlisted_case(document: Document) -> None:
+    document["models"]["opus"]["deep_research"]["cases"].append("third-case")
+
+
+def _no_cases(document: Document) -> None:
+    document["models"]["opus"]["deep_research"]["cases"] = []
+
+
+def _cases_not_names(document: Document) -> None:
+    document["models"]["opus"]["deep_research"]["cases"] = "first-case"
+
+
+def _budget_case_not_compared(document: Document) -> None:
+    budget = document["models"]["opus"]["deep_research"]["gap_search_budget"]
+    budget["case"] = "third-case"
+
+
+def _share_zero(document: Document) -> None:
+    budget = document["models"]["opus"]["deep_research"]["gap_search_budget"]
+    budget["max_share_of_rival"] = 0
+
+
+def _share_above_one(document: Document) -> None:
+    budget = document["models"]["opus"]["deep_research"]["gap_search_budget"]
+    budget["max_share_of_rival"] = 1.5
+
+
+def _no_baseline(document: Document) -> None:
+    del document["models"]["opus"]["deep_research"]["gap_search_budget"][
+        "baseline_usd"
+    ]
+
+
+@pytest.mark.parametrize(
+    "breakage",
+    [
+        _unlisted_case,
+        _no_cases,
+        _cases_not_names,
+        _budget_case_not_compared,
+        _share_zero,
+        _share_above_one,
+        _no_baseline,
+    ],
+)
+def test_against_exits_2_on_a_malformed_deep_research_entry(
+    tmp_path: Path, breakage: object
+) -> None:
+    document = deep_research_document()
+    assert callable(breakage)
+    breakage(document)
+    assert run_against(write_rival_iteration(tmp_path), document) == 2
+
+
+def test_against_accepts_a_share_of_exactly_one(tmp_path: Path) -> None:
+    document = deep_research_document()
+    budget = document["models"]["opus"]["deep_research"]["gap_search_budget"]
+    budget["max_share_of_rival"] = 1
+    assert run_against(write_rival_iteration(tmp_path), document) == 0
