@@ -278,23 +278,23 @@
         "related-work-search": {
           "total": 8,
           "with_skill": {
-            "passed": null,
-            "spend_usd": null
+            "passed": 8,
+            "spend_usd": 1.267
           },
           "without_skill": {
-            "passed": null,
-            "spend_usd": null
+            "passed": 7,
+            "spend_usd": 0.7992
           }
         },
         "novelty-claim": {
           "total": 8,
           "with_skill": {
-            "passed": null,
-            "spend_usd": null
+            "passed": 8,
+            "spend_usd": 0.9271
           },
           "without_skill": {
-            "passed": null,
-            "spend_usd": null
+            "passed": 6,
+            "spend_usd": 0.4736
           }
         }
       },
@@ -540,23 +540,23 @@
         "related-work-search": {
           "total": 8,
           "with_skill": {
-            "passed": null,
-            "spend_usd": null
+            "passed": 7,
+            "spend_usd": 0.4436
           },
           "without_skill": {
-            "passed": null,
-            "spend_usd": null
+            "passed": 5,
+            "spend_usd": 0.1038
           }
         },
         "novelty-claim": {
           "total": 8,
           "with_skill": {
-            "passed": null,
-            "spend_usd": null
+            "passed": 8,
+            "spend_usd": 0.253
           },
           "without_skill": {
-            "passed": null,
-            "spend_usd": null
+            "passed": 4,
+            "spend_usd": 0.0858
           }
         }
       },
