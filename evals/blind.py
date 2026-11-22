@@ -29,11 +29,11 @@ OUTPUTS = "outputs"
 GRADING = "grading.json"
 LEFT_OUT = ("subagents.json",)
 ID_DIGITS = 8
-RUN_NAME = re.compile(r"(with(out)?_skill|deep_research)(-\d+)?")
+# A skill arm may name the variant it runs, such as with_skill_medium.
+ARM = r"(with_skill(_[a-z]+)?|without_skill|deep_research)(-\d+)?"
+RUN_NAME = re.compile(ARM)
 # A run as the key records it: <model>/<case>/<arm>, each part a plain name.
-KEY_RUN = re.compile(
-    r"[\w-][\w.-]*/[\w-][\w.-]*/(with(out)?_skill|deep_research)(-\d+)?"
-)
+KEY_RUN = re.compile(rf"[\w-][\w.-]*/[\w-][\w.-]*/{ARM}")
 
 
 def find_runs(iteration: Path) -> list[Path]:
