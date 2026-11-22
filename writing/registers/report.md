@@ -4,6 +4,8 @@ Final reports, dissertations, project plans, papers, abstracts, lab reports, pro
 
 Read with this file: `clarity.md` for terms, equations and figures; `sources.md` when the text cites; `exemplars.md` for a piece over about 800 words with no sample of the student's writing.
 
+A sentence saying something is new, first or not done makes the text Full tier, whatever else it does: run the gap search in `sources-search.md` before writing it.
+
 ## The target
 
 A well-written journal paper. The PHC903 final report rubric gives 20% to writing and asks at the top band for "publishable quality" and "full compliance with journal style"; the 75% band asks the writer to be "eloquent in the expression of their subject" and to "convey ideas in a transparent, clear fashion". The analysis criterion (40%) asks for results set in context "of appropriate and published material, showing how conclusions are supported by the data". Write to that.
@@ -22,7 +24,7 @@ If a rubric, handbook or template is in the working folder, it overrides this fi
 
 **Abstract.** Stands alone. The problem in one sentence, the method in one, the main results as numbers with uncertainties and a comparison to the expected value, and what they mean. No citations, no undefined abbreviations, no "this report will".
 
-**Introduction.** Open on the specific problem, not on the field's importance. Then the funnel: the problem; what is known, told as a short history with names, dates and citations; the gap; the aim and how the report meets it. Each paragraph opens by naming the next constraint or step, so the introduction reads as a chain of reasons. A closing sentence on how the report is organised is conventional and expected.
+**Introduction.** Open on the specific problem, not on the field's importance. Then the funnel: the problem; what is known, told as a short history with names, dates and citations; the gap, narrowed against the gap search in `sources-search.md`; the aim and how the report meets it. Each paragraph opens by naming the next constraint or step, so the introduction reads as a chain of reasons. A closing sentence on how the report is organised is conventional and expected.
 
 **Theory or background.** Only what the reader needs to follow the results. Every equation introduced, displayed, numbered, its symbols defined in words with units, and read physically afterwards (`clarity.md`). Refer back to equations by name and number.
 
@@ -42,9 +44,9 @@ If a rubric, handbook or template is in the working folder, it overrides this fi
 
 **Conclusion.** Link the results back to the aims in the introduction. No new concepts, no new results. End on the open question or the limitation that matters most, not on a restatement.
 
-**Project plan.** Aims stated as checkable outcomes, the method for each, the risks with their mitigations, and a timeline whose tasks match the aims one for one. Write it as a plan the reader could hold the student to.
+**Project plan.** Aims stated as checkable outcomes, the method for each, the risks with their mitigations, and a timeline whose tasks match the aims one for one. A claim that the aims are new goes through the gap search in `sources-search.md`. Write it as a plan the reader could hold the student to.
 
-**Literature review.** Organised by question or by approach, never as a list of papers one after another. Each paragraph makes a claim about the field and cites the papers that support or contest it. Every source verified under `sources.md`.
+**Literature review.** Organised by question or by approach, never as a list of papers one after another. Each paragraph makes a claim about the field and cites the papers that support or contest it. Every source verified under `sources.md`. The gap the review ends on is narrowed against the gap search in `sources-search.md`.
 
 ## Figures and tables
 

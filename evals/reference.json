@@ -274,6 +274,43 @@
             "passed": 5,
             "spend_usd": 0.2863
           }
+        },
+        "related-work-search": {
+          "total": 8,
+          "with_skill": {
+            "passed": 8,
+            "spend_usd": 1.267
+          },
+          "without_skill": {
+            "passed": 7,
+            "spend_usd": 0.7992
+          }
+        },
+        "novelty-claim": {
+          "total": 8,
+          "with_skill": {
+            "passed": 8,
+            "spend_usd": 0.9271
+          },
+          "without_skill": {
+            "passed": 6,
+            "spend_usd": 0.4736
+          }
+        }
+      },
+      "deep_research": {
+        "cases": [
+          "cited-paragraph",
+          "nonexistent-citation",
+          "literature-review",
+          "book-citation",
+          "related-work-search",
+          "novelty-claim"
+        ],
+        "gap_search_budget": {
+          "case": "literature-review",
+          "baseline_usd": 2.7564,
+          "max_share_of_rival": 0.25
         }
       }
     },
@@ -499,6 +536,43 @@
             "passed": 5,
             "spend_usd": 0.0981
           }
+        },
+        "related-work-search": {
+          "total": 8,
+          "with_skill": {
+            "passed": 7,
+            "spend_usd": 0.4436
+          },
+          "without_skill": {
+            "passed": 5,
+            "spend_usd": 0.1038
+          }
+        },
+        "novelty-claim": {
+          "total": 8,
+          "with_skill": {
+            "passed": 8,
+            "spend_usd": 0.253
+          },
+          "without_skill": {
+            "passed": 4,
+            "spend_usd": 0.0858
+          }
+        }
+      },
+      "deep_research": {
+        "cases": [
+          "cited-paragraph",
+          "nonexistent-citation",
+          "literature-review",
+          "book-citation",
+          "related-work-search",
+          "novelty-claim"
+        ],
+        "gap_search_budget": {
+          "case": "literature-review",
+          "baseline_usd": 0.2951,
+          "max_share_of_rival": 0.25
         }
       }
     }

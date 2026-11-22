@@ -27,7 +27,7 @@ A named tone ("warmer", "shorter") also needs `voice.md`. Everywhere: UK spellin
 Each turn rereads the conversation: read everything the tier names in one turn.
 
 - **Light**, a message or an edit the request spells out: the register, unless the request names every change. Run only `scripts/check.py`, fixing only your own words.
-- **Full**, text that draws on published work: the Standard files, `review.md`, `sources.md` and `sources-search.md`.
+- **Full**, text drawing on published work: the Standard files, `review.md`, `sources.md`, `sources-search.md` and its `scripts/gap_search.py`.
 - **Standard**, anything else: the register, `clarity.md`, `tells.md`, and `review.md` for a rubric, an explainer or over 400 words.
 
 Never open a script's source. After spawning a subagent, end the turn: it reports when done, so never poll or sleep. Revise with edits, not rewrites.
@@ -62,7 +62,7 @@ Decide every choice about the text and log it, including how each finding or for
    Fix every error and judge each warning as `tells.md` says. Stop after three runs and list what is left in the notes.
 4. If the tier read `review.md`, run its passes, settle each finding as it says, then rerun step 3's command.
 5. Before delivering, check each test, and that nothing the notes lack was added and no caveat dropped.
-6. Deliver in the requested format, followed only by open markers, the verification log's location, what other files send to the notes, and the judgement log.
+6. Deliver in the requested format, followed only by open markers, the logs' locations, what other files send to the notes, and the judgement log.
 
 ## Editing the student's text
 

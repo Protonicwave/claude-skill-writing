@@ -206,7 +206,7 @@ _TYPOGRAPHY = str.maketrans(
         "\u00ad": None,
     }
 )
-_ATOM = "{http://www.w3.org/2005/Atom}"
+ATOM = "{http://www.w3.org/2005/Atom}"
 _ARXIV_NS = "{http://arxiv.org/schemas/atom}"
 _OPENSEARCH = "{http://a9.com/-/spec/opensearch/1.1/}"
 
@@ -1129,7 +1129,7 @@ def _with_openalex(record: Record, url: str, fetch: Fetch) -> Record:
     if work.get("is_retracted") is True:
         notices += (Notice("retracted", True, "OpenAlex marks it retracted"),)
     texts = record.texts
-    abstract = _from_inverted_index(work.get("abstract_inverted_index"))
+    abstract = from_inverted_index(work.get("abstract_inverted_index"))
     if abstract:
         texts += (("abstract (OpenAlex)", normalise_passage(abstract)),)
     return replace(
@@ -1149,7 +1149,7 @@ def _open_access_url(value: object) -> str | None:
     return None
 
 
-def _from_inverted_index(index: object) -> str:
+def from_inverted_index(index: object) -> str:
     if not isinstance(index, dict):
         return ""
     placed = sorted(
@@ -1201,7 +1201,7 @@ def _first(value: object) -> str:
 
 
 @dataclass(frozen=True, slots=True)
-class _ArxivEntry:
+class ArxivEntry:
     version: int
     title: str
     authors: tuple[str, ...]
@@ -1228,7 +1228,7 @@ def _look_up_arxiv(arxiv: ArxivId, fetch: Fetch) -> Record | Missing:
     return _arxiv_record(url, arxiv.base, cited, latest)
 
 
-def _arxiv_entry(url: str, fetch: Fetch) -> _ArxivEntry | Missing:
+def _arxiv_entry(url: str, fetch: Fetch) -> ArxivEntry | Missing:
     try:
         body = fetch(url)
     except RegistryUnavailableError as err:
@@ -1242,27 +1242,27 @@ def _arxiv_entry(url: str, fetch: Fetch) -> _ArxivEntry | Missing:
         feed = ElementTree.fromstring(body)  # noqa: S314
     except ElementTree.ParseError as err:
         return Missing(url, f"arXiv returned an unreadable feed ({err})")
-    entry = feed.find(f"{_ATOM}entry")
+    entry = feed.find(f"{ATOM}entry")
     if feed.findtext(f"{_OPENSEARCH}totalResults", "0").strip() == "0" or entry is None:
         return Missing(url, "no arXiv paper with this identifier")
-    return _parse_arxiv_entry(entry)
+    return parse_arxiv_entry(entry)
 
 
-def _parse_arxiv_entry(entry: ElementTree.Element) -> _ArxivEntry:
+def parse_arxiv_entry(entry: ElementTree.Element) -> ArxivEntry:
     def text(tag: str) -> str:
         return _WHITESPACE.sub(" ", entry.findtext(tag, "")).strip()
 
-    version = _ARXIV_VERSION.search(text(f"{_ATOM}id"))
-    return _ArxivEntry(
+    version = _ARXIV_VERSION.search(text(f"{ATOM}id"))
+    return ArxivEntry(
         version=int(version.group(1)) if version else 1,
-        title=text(f"{_ATOM}title"),
+        title=text(f"{ATOM}title"),
         authors=tuple(
-            _WHITESPACE.sub(" ", author.findtext(f"{_ATOM}name", "")).strip()
-            for author in entry.findall(f"{_ATOM}author")
+            _WHITESPACE.sub(" ", author.findtext(f"{ATOM}name", "")).strip()
+            for author in entry.findall(f"{ATOM}author")
         ),
-        published_year=_leading_year(text(f"{_ATOM}published")),
-        updated_year=_leading_year(text(f"{_ATOM}updated")),
-        summary=text(f"{_ATOM}summary"),
+        published_year=_leading_year(text(f"{ATOM}published")),
+        updated_year=_leading_year(text(f"{ATOM}updated")),
+        summary=text(f"{ATOM}summary"),
         comment=text(f"{_ARXIV_NS}comment"),
         journal_ref=text(f"{_ARXIV_NS}journal_ref"),
         doi=text(f"{_ARXIV_NS}doi"),
@@ -1274,9 +1274,7 @@ def _leading_year(timestamp: str) -> int | None:
     return int(year) if len(year) == YEAR_DIGITS and year.isdigit() else None
 
 
-def _arxiv_record(
-    url: str, base: str, cited: _ArxivEntry, latest: _ArxivEntry
-) -> Record:
+def _arxiv_record(url: str, base: str, cited: ArxivEntry, latest: ArxivEntry) -> Record:
     if cited.version == latest.version:
         version = f"v{cited.version} (latest)"
     else:

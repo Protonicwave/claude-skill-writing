@@ -336,6 +336,42 @@
         {"kind": "checker_clean", "format": "markdown"},
         {"kind": "max_words", "limit": 400, "format": "markdown"}
       ]
+    },
+    {
+      "id": 21,
+      "prompt": "Write the related-work paragraph for my project report on a neural-network decoder for the surface code. My notes are in decoder-project.md.",
+      "expected_output": "About 250 words of LaTeX that cites several published machine-learning decoders for topological codes, each found and checked, narrows the student's belief that neural decoders were only tested under code-capacity noise, marks what the project adds, and says what was searched.",
+      "files": ["files/decoder-project.md"],
+      "expectations": [
+        "The paragraph cites at least four distinct published works on neural-network or other machine-learning decoders for the surface code or other topological codes, each listed in a sources file or verification log saved alongside the deliverable",
+        "Every statement of what a cited work did is supported by a passage the run saved, or carries a marker saying it was not checked",
+        "The student's belief that neural decoders have only been tested under code-capacity noise is not repeated: the paragraph takes account of published neural decoders already trained or tested under circuit-level noise or on experimental data, or marks the belief as not checked",
+        "What the project adds beyond the cited work is taken from the notes or carries a marker for the student to supply; no 'first' or 'no one has' claim is made that the run did not search for",
+        "The notes or a saved log say which registries or sources were searched, with which terms, and on what date"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "latex"},
+        {"kind": "contains_any", "phrases": ["\\cite"]},
+        {"kind": "max_words", "limit": 310, "format": "latex"}
+      ]
+    },
+    {
+      "id": 22,
+      "prompt": "Write the aims and novelty paragraph for my project plan from my notes (tokamak-plan-notes.md).",
+      "expected_output": "About 200 words of Markdown that keeps the three aims, replaces the claim that no one has used reinforcement learning for tokamak magnetic control with the published work found and checked, marks what the project adds, and says what was searched.",
+      "files": ["files/tokamak-plan-notes.md"],
+      "expectations": [
+        "The claim that no one has used reinforcement learning for magnetic control of a tokamak plasma is not repeated: the paragraph says such work has been published and cites at least one work applying reinforcement learning to tokamak magnetic or vertical control, supported by a passage the run saved",
+        "What the project adds beyond the published work is taken from the notes or carries a marker for the student to supply; no new 'first', 'novel' or 'no one has' claim is made that the run did not search for",
+        "The three aims in the notes are all stated with their meaning unchanged",
+        "The notes or a saved log say which registries or sources were searched, with which terms, and on what date",
+        "A sources file or verification log is saved alongside the deliverable and lists every cited work, so a reader can trace it"
+      ],
+      "checks": [
+        {"kind": "checker_clean", "format": "markdown"},
+        {"kind": "max_words", "limit": 250, "format": "markdown"},
+        {"kind": "forbidden_phrases", "phrases": ["no one has", "nobody has", "would be the first"]}
+      ]
     }
   ]
 }
