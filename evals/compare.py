@@ -79,7 +79,7 @@ class ModelReference:
     cases: dict[str, CaseReference]
     budget: SpendBudget | None
     rival: str | None
-    deep_research: DeepResearch | None = None
+    deep_research: DeepResearch | None
 
 
 def _object(value: object, where: object) -> dict[str, object]:
@@ -315,61 +315,63 @@ def _table(section: ModelReference, runs: Mapping[str, Figures]) -> list[str]:
 
 
 def _gap_search_spend(
-    budget: GapSearchBudget, skill: Mapping[str, Figures], rival: Mapping[str, Figures]
+    budget: GapSearchBudget,
+    skill: Mapping[str, Figures],
+    deep_runs: Mapping[str, Figures],
 ) -> tuple[float, float]:
     """The skill's spend over its baseline on the budget case, and the limit."""
     return (
         skill[budget.case].spend - budget.baseline_usd,
-        budget.max_share_of_rival * rival[budget.case].spend,
+        budget.max_share_of_rival * deep_runs[budget.case].spend,
     )
 
 
 def against_failures(
-    section: DeepResearch,
+    entry: DeepResearch,
     skill: Mapping[str, Figures],
-    rival: Mapping[str, Figures],
+    deep_runs: Mapping[str, Figures],
     totals: Mapping[str, int],
 ) -> list[str]:
     """Name each case the skill scores below or spends no less on, then the budget."""
     found = []
-    for name in section.cases:
-        if skill[name].passed < rival[name].passed:
+    for name in entry.cases:
+        if skill[name].passed < deep_runs[name].passed:
             found.append(
                 f"{name} scored {skill[name].passed:g} of {totals[name]}, "
-                f"deep research {rival[name].passed:g}"
+                f"deep research {deep_runs[name].passed:g}"
             )
-        if skill[name].spend >= rival[name].spend:
+        if skill[name].spend >= deep_runs[name].spend:
             found.append(
                 f"{name} spent ${skill[name].spend:.2f}, not below "
-                f"deep research's ${rival[name].spend:.2f}"
+                f"deep research's ${deep_runs[name].spend:.2f}"
             )
-    extra, limit = _gap_search_spend(section.budget, skill, rival)
+    extra, limit = _gap_search_spend(entry.budget, skill, deep_runs)
     if extra > limit:
         found.append(
             f"${extra:.2f} gap search spend over the ${limit:.2f} budget "
-            f"on {section.budget.case}"
+            f"on {entry.budget.case}"
         )
     return found
 
 
 def _against_table(
-    section: DeepResearch,
+    entry: DeepResearch,
     totals: Mapping[str, int],
     skill: Mapping[str, Figures],
-    rival: Mapping[str, Figures],
+    deep_runs: Mapping[str, Figures],
 ) -> list[str]:
-    width = max(len(name) for name in [*section.cases, "case"])
+    width = max(len(name) for name in [*entry.cases, "case"])
     header = ("score", "deep res.", "spend", "deep res.")
     lines = [f"{'case':<{width}}  " + "  ".join(f"{cell:>9}" for cell in header)]
     lines.extend(
-        _row(name, width, totals[name], (skill[name], rival[name]))
-        for name in section.cases
+        _row(name, width, totals[name], (skill[name], deep_runs[name]))
+        for name in entry.cases
     )
-    extra, limit = _gap_search_spend(section.budget, skill, rival)
+    extra, limit = _gap_search_spend(entry.budget, skill, deep_runs)
     lines.append(
-        f"gap search spend on {section.budget.case}: ${extra:.2f} "
-        f"(budget ${limit:.2f}, {section.budget.max_share_of_rival:.0%} "
-        f"of deep research's ${rival[section.budget.case].spend:.2f})"
+        f"gap search spend on {entry.budget.case}: ${extra:.2f} "
+        f"(budget ${limit:.2f}, {entry.budget.max_share_of_rival:.0%} "
+        f"of deep research's ${deep_runs[entry.budget.case].spend:.2f})"
     )
     return lines
 
@@ -377,19 +379,21 @@ def _against_table(
 def _compare_with_deep_research(
     iteration: Path, model: str, models: Mapping[str, ModelReference], prices: Prices
 ) -> int:
-    section = models[model]
-    entry = section.deep_research
+    reference = models[model]
+    entry = reference.deep_research
     if entry is None:
         raise ValueError(f"{model} has no {DEEP_RESEARCH} entry in the reference")
     skill = {}
-    rival = {}
+    deep_runs = {}
     for name in entry.cases:
         case_dir = iteration / model / name
-        skill[name] = load_case(case_dir, section.cases[name], prices)
-        rival[name] = load_case(case_dir, section.cases[name], prices, DEEP_RESEARCH)
-    totals = {name: section.cases[name].total for name in entry.cases}
-    print("\n".join(_against_table(entry, totals, skill, rival)))
-    found = against_failures(entry, skill, rival, totals)
+        skill[name] = load_case(case_dir, reference.cases[name], prices)
+        deep_runs[name] = load_case(
+            case_dir, reference.cases[name], prices, DEEP_RESEARCH
+        )
+    totals = {name: reference.cases[name].total for name in entry.cases}
+    print("\n".join(_against_table(entry, totals, skill, deep_runs)))
+    found = against_failures(entry, skill, deep_runs, totals)
     for failure in found:
         print(f"FAIL: {failure}")
     return 1 if found else 0
