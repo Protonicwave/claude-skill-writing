@@ -154,7 +154,7 @@ def normalise_queries(queries: Sequence[str]) -> tuple[str, ...]:
         raise ValueError(f"expected {QUERY_COUNT} queries, got {len(queries)}")
     cleaned = tuple(clean_text(query) for query in queries)
     for query in cleaned:
-        words = len(query.split())
+        words = len(_search_words(query))
         if not MIN_QUERY_WORDS <= words <= MAX_QUERY_WORDS:
             raise ValueError(
                 f"expected {MIN_QUERY_WORDS} to {MAX_QUERY_WORDS} words in each "
@@ -165,6 +165,12 @@ def normalise_queries(queries: Sequence[str]) -> tuple[str, ...]:
         if query in folded[:index]:
             raise ValueError(f"duplicate query {cleaned[index]!r}")
     return cleaned
+
+
+def _search_words(query: str) -> list[str]:
+    """The words of a query that name something; quotes and bare dashes are not."""
+    words = (word.replace('"', "") for word in query.split())
+    return [word for word in words if any(char.isalnum() for char in word)]
 
 
 def clean_text(text: str) -> str:
@@ -215,8 +221,7 @@ def _requests(queries: Sequence[str]) -> list[Request]:
     for number, query in enumerate(queries, start=1):
         # Each word must appear, which keeps arXiv's answers on the topic;
         # quoting keeps a hyphenated word together.
-        words = (word.replace('"', "") for word in query.split())
-        arxiv_query = " AND ".join(f'all:"{word}"' for word in words)
+        arxiv_query = " AND ".join(f'all:"{word}"' for word in _search_words(query))
         requests.append(
             Request(
                 Registry.OPENALEX,
@@ -239,18 +244,24 @@ def _requests(queries: Sequence[str]) -> list[Request]:
 def _ask(request: Request, fetch: Fetch) -> list[Hit]:
     body = fetch(request.url)
     if body is None:
-        return []
+        # A search address never has a legitimate 404: the registry moved it.
+        raise RegistryUnavailableError(f"{request.url}: HTTP 404")
     if request.registry is Registry.OPENALEX:
         return _openalex_hits(body, request.label)
     return _arxiv_hits(body, request.label)
 
 
 def _add(hits: list[Hit], found: Hit) -> None:
-    for index, hit in enumerate(hits):
-        if hit.keys & found.keys:
-            hits[index] = hit.merged(found)
-            return
-    hits.append(found)
+    joined = [index for index, hit in enumerate(hits) if hit.keys & found.keys]
+    if not joined:
+        hits.append(found)
+        return
+    merged = hits[joined[0]]
+    for index in joined[1:]:
+        merged = merged.merged(hits[index])
+    hits[joined[0]] = merged.merged(found)
+    for index in reversed(joined[1:]):
+        del hits[index]
 
 
 def _openalex_hits(body: bytes, label: str) -> list[Hit]:

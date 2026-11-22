@@ -165,6 +165,29 @@ def test_search_joins_a_preprint_to_its_published_version() -> None:
     ]
 
 
+def test_search_joins_two_listed_works_that_a_later_hit_connects() -> None:
+    registry = FakeRegistry(
+        [
+            (
+                "openalex",
+                openalex(
+                    work(1, doi="10.1103/PhysRevD.1.1"),
+                    work(2, doi="10.48550/arXiv.2301.12345"),
+                ),
+            ),
+            ("arxiv", feed(arxiv_entry("2301.12345v1", doi="10.1103/PhysRevD.1.1"))),
+        ]
+    )
+
+    result = search(QUERIES, registry)
+
+    assert [(hit.doi, hit.arxiv) for hit in result.hits] == [
+        ("10.1103/physrevd.1.1", "2301.12345")
+    ]
+    assert "OpenAlex q1" in result.hits[0].found_by
+    assert "arXiv q1" in result.hits[0].found_by
+
+
 def test_search_keeps_at_most_five_hits_from_each_request() -> None:
     registry = FakeRegistry(
         [
@@ -235,10 +258,9 @@ def test_main_prints_each_hit_and_writes_the_log(
 @pytest.mark.parametrize(
     "routes",
     [
-        [("openalex", None), ("arxiv", EMPTY_FEED)],
         [("openalex", openalex()), ("arxiv", EMPTY_FEED)],
     ],
-    ids=["openalex-404", "empty-results"],
+    ids=["empty-results"],
 )
 def test_main_exits_0_with_no_hits(
     monkeypatch: pytest.MonkeyPatch,
@@ -259,9 +281,19 @@ def test_main_exits_0_with_no_hits(
         (*QUERIES, "quantum annealing schedule"),
         ("sampler", *QUERIES[1:]),
         ("one two three four five six seven eight nine", *QUERIES[1:]),
+        ('"" quantum', *QUERIES[1:]),
+        ("- quantum", *QUERIES[1:]),
         (QUERIES[0], "Neural  network sampler ISING model", QUERIES[2]),
     ],
-    ids=["two-queries", "four-queries", "one-word", "nine-words", "duplicate"],
+    ids=[
+        "two-queries",
+        "four-queries",
+        "one-word",
+        "nine-words",
+        "empty-quotes",
+        "lone-dash",
+        "duplicate",
+    ],
 )
 def test_main_exits_2_on_invalid_queries_before_any_request(
     monkeypatch: pytest.MonkeyPatch,
@@ -339,6 +371,13 @@ def test_main_exits_2_when_the_log_folder_is_missing(
             ],
             "arXiv q1",
         ),
+        (
+            [
+                ("openalex", None),
+                ("arxiv", feed(arxiv_entry("1910.13496v2", title="Kept from arXiv"))),
+            ],
+            "OpenAlex q1",
+        ),
     ],
     ids=[
         "unavailable",
@@ -347,6 +386,7 @@ def test_main_exits_2_when_the_log_folder_is_missing(
         "broken-xml",
         "not-a-feed",
         "error-entry",
+        "address-not-found",
     ],
 )
 def test_main_exits_1_naming_a_failed_request_and_prints_the_other_hits(
