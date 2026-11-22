@@ -9,7 +9,7 @@ A skill for Claude that writes and edits prose people read (reports, dissertatio
 - `writing/scripts/verify.py`: the source verifier, standard library only.
 - `writing/scripts/gap_search.py`: the search for published work that closes a stated gap, built on the verifier.
 - `install.py`: installs the skill and builds the upload zip.
-- `evals/`: the eval set, its input files, the grader, and the scripts that price runs from their transcripts, hide the arm from graders and compare runs with the reference.
+- `evals/`: the eval set, its input files, the grader, and the scripts that price runs from their transcripts, hide the arm from graders, compare runs with the reference and compare two arms on time.
 - `tests/`: checker rules, verifier, grader, eval scripts, skill structure and installer.
 
 ## Install
@@ -71,11 +71,11 @@ uv run mypy
 uv run vulture writing/scripts install.py tests evals --min-confidence 80
 ```
 
-The eval scripts that price, hide and compare runs, and the gap search, need full branch coverage, and the locked dependencies are audited:
+The eval scripts that price, hide, compare and time runs, and the gap search, need full branch coverage, and the locked dependencies are audited:
 
 ```
 uv run coverage run --branch --source=evals,writing/scripts -m pytest
-uv run coverage report --show-missing --fail-under=100 --include=evals/spend.py,evals/compare.py,evals/blind.py,writing/scripts/gap_search.py
+uv run coverage report --show-missing --fail-under=100 --include=evals/spend.py,evals/compare.py,evals/blind.py,evals/speed.py,writing/scripts/gap_search.py
 uv run coverage erase
 uv export --format pylock.toml --no-emit-project -o <scratch>/pylock.toml && uv run pip-audit --locked <scratch>
 ```
@@ -164,5 +164,14 @@ uv run python evals/compare.py evals/workspace/iteration-5 --model sonnet
 ```
 
 `reveal` writes nothing unless every copy is graded. The grader merges its results into each run's `grading.json`, keeping the judgement grades. `compare.py` prints each case's with-skill score and spend, subagents included, beside the model's section of `evals/reference.json`, which holds the reference with-skill run and the no-skill arm. It exits 1 when a case scores below its reference, when the total score does not beat the model's no-skill arm, when the extra spend over that arm on the cases `max_extra_spend` lists exceeds its budget, or, for a section that names a `rival`, when the total score is below the rival model's no-skill arm or the spend is not below it. It exits 2 when a run, a transcript or a price is missing or malformed. The no-skill arm is run once per model: rerun it and update the reference when the model or the prices change.
+
+To compare two arms on score, spend and wall time, case by case, give the arm under test, the baseline arm and the most wall time the arm may take as a share of the baseline's:
+
+```
+uv run python evals/speed.py evals/workspace/iteration-10 --model opus --arm with_skill_medium --against with_skill_high --max-seconds-ratio 0.75
+uv run python evals/speed.py evals/workspace/iteration-11 --model opus --arm with_skill_search --against with_skill_medium --baseline-iteration evals/workspace/iteration-10
+```
+
+A run's wall time is the span from the earliest to the latest timestamp in its transcript and its subagents' transcripts, and a case's figure is the median over the arm's repeats. The command prints each case's score, spend and time beside the baseline's, with the summed time ratio beside its budget, and exits 1 when the time is over the ratio, the summed spend is higher or any case scores lower, and 2 when a run, transcript, timestamp or grade is missing or a case has runs of one arm only. Launch both arms in one batch so machine load affects them alike.
 
 `evals/baseline.md` records the score of the skill before any change, `evals/after-upgrade.md` the score after the review passes, tones and new registers were added, `evals/after-efficiency.md` the score and cost after the work to cut tokens, and `evals/after-quality.md` the score and cost after the expectations for review passes and source search were added and the sources procedure was changed, which set the current reference. `evals/before-judgement.md` and `evals/after-judgement.md` record all four arms before the judgement changes and the with-skill arms after them, with the spend budgets and the rerun that followed a change to the notes rule. `evals/after-gap-search.md` records the skill against deep research on the six research cases, every run's score and spend, after the gap search was added.
