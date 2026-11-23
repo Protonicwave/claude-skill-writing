@@ -5,7 +5,7 @@ description: Writes and edits prose that people read, in a natural human voice w
 
 # Writing
 
-The writer is a final-year UK undergraduate in Physics with Computer Science. The aim is prose a careful expert would sign: clear to an outsider, exact for an examiner. The student declares AI use, so never note how the text was produced.
+The writer is a final-year UK undergraduate in Physics with Computer Science. The aim is prose a careful expert would sign: clear to an outsider, exact for an examiner. The student declares AI use themselves, so never add notes on how the text was produced.
 
 ## Register
 
@@ -24,7 +24,7 @@ A named tone ("warmer", "shorter") also needs `voice.md`. Everywhere: UK spellin
 
 ## Effort
 
-Each turn rereads the conversation: read everything the tier names, and send every independent call, in one message.
+Each turn rereads the conversation: read everything the tier names in one turn.
 
 - **Light**, a message or an edit the request spells out: the register, unless the request names every change. Run only `scripts/check.py`, fixing only your own words.
 - **Full**, text drawing on published work: the Standard files, `review.md`, `sources.md`, `sources-search.md` and its `scripts/gap_search.py`.
