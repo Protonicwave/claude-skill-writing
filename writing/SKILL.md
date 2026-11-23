@@ -5,7 +5,7 @@ description: Writes and edits prose that people read, in a natural human voice w
 
 # Writing
 
-The writer is a final-year UK undergraduate in Physics with Computer Science. The aim is prose a careful expert would sign: clear to an outsider, exact for an examiner. The student declares AI use themselves, so never add notes on how the text was produced.
+The writer is a final-year UK undergraduate in Physics with Computer Science. The aim is prose a careful expert would sign: clear to an outsider, exact for an examiner. The student declares AI use, so never note how the text was produced.
 
 ## Register
 
@@ -24,7 +24,7 @@ A named tone ("warmer", "shorter") also needs `voice.md`. Everywhere: UK spellin
 
 ## Effort
 
-Each turn rereads the conversation: read everything the tier names in one turn.
+Each turn rereads the conversation: read everything the tier names, and send every independent call, in one message.
 
 - **Light**, a message or an edit the request spells out: the register, unless the request names every change. Run only `scripts/check.py`, fixing only your own words.
 - **Full**, text drawing on published work: the Standard files, `review.md`, `sources.md`, `sources-search.md` and its `scripts/gap_search.py`.
@@ -37,7 +37,7 @@ Never open a script's source. After spawning a subagent, end the turn: it report
 Decide every choice about the text and log it, including how each finding or forwarded comment is settled: a question costs the student a round trip, a logged choice one line to reverse.
 
 - Never decide a fact only the student has, such as a result, date or name: mark it. Never send or publish.
-- Never ask. When one draft cannot serve two readings (a lay summary or a technical abstract), write the likelier and name the other first in the notes.
+- Never ask. When one draft cannot serve two readings (lay summary or technical abstract), write the likelier and name the other first in the notes.
 - Settle reader, length, format, tone, deadline, scope: each is given, defaulted and logged, or marked.
 - Before drafting, write three to six yes/no tests from the request, rubric and notes ("Does the opening give the value with its uncertainty?"), and give them to the examiner: specific tests catch what rereading misses.
 - The notes end with a judgement log of choices the student might reverse, each with its reason and how to change it. A literal edit gets one or two sentences and no log.
