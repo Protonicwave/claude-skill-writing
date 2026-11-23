@@ -201,6 +201,25 @@ def test_main_prints_hits_under_their_claims_and_writes_the_log(
     assert "arXiv:1610.03137" in log
 
 
+def test_main_logs_each_abstract_whole_and_prints_its_start(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    words = [f"word{n}" for n in range(120)]
+    long_work = {
+        **work(1),
+        "abstract_inverted_index": {word: [n] for n, word in enumerate(words)},
+    }
+    registry = FakeRegistry(
+        {("openalex", "neural network sampler Ising model"): openalex(long_work)}
+    )
+
+    run_main(monkeypatch, registry, tmp_path)
+
+    whole = " ".join(words)
+    assert whole not in capsys.readouterr().out
+    assert whole in (tmp_path / "source-search.md").read_text(encoding="utf-8")
+
+
 def test_main_exits_1_naming_a_failed_request_and_prints_the_other_hits(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

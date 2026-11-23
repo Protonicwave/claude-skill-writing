@@ -15,7 +15,7 @@ claim, a work that several of the claim's requests found once and first, each
 on one line: identifiers, year, title, the start of the abstract and the
 requests that found it. Each claim prints at most its share of
 MAX_PRINTED_CHARACTERS; the Markdown log holds the date, every request's URL
-and outcome, and every hit.
+and outcome, and every hit with its whole abstract.
 
 Registry responses are kept for 24 hours in `sources.cache.json` beside the
 log. No request starts after 120 s. Exits 0 when every request was answered,
@@ -236,11 +236,17 @@ def render_log(results: Sequence[ClaimResult], searched: date) -> str:
             )
         lines += [
             "",
-            "| Identifiers | Year | Title | Abstract, start | Found by |",
+            "| Identifiers | Year | Title | Abstract | Found by |",
             "|---|---|---|---|---|",
-            *("| " + " | ".join(hit_cells(hit)) + " |" for hit in result.hits),
+            *("| " + " | ".join(_log_cells(hit)) + " |" for hit in result.hits),
         ]
     return "\n".join(lines) + "\n"
+
+
+def _log_cells(hit: Hit) -> tuple[str, ...]:
+    """The printed cells with the whole abstract, so a quote can come from the log."""
+    identifiers, year, title, _, found_by = hit_cells(hit)
+    return identifiers, year, title, hit.abstract or "no abstract", found_by
 
 
 def _read_claims(path: Path) -> tuple[Claim, ...]:
