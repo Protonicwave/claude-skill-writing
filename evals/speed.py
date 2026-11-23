@@ -2,16 +2,18 @@
 
 Usage:
   python evals/speed.py ITERATION --model MODEL --arm ARM --against ARM
-      [--baseline-iteration DIR] [--max-seconds-ratio RATIO] [--reference PATH]
+      [--baseline-iteration DIR] [--max-seconds-ratio RATIO] [--case NAME ...]
+      [--reference PATH]
 
-For every case that has a run of either arm, prints the median score, the
-median spend and the median wall time of each arm's runs (an arm's repeats sit
-in ARM, ARM-2, ARM-3). A run's wall time is the span from the earliest to the
-latest timestamp across its transcript and its subagents' transcripts. Exit 0
-when the summed wall time is at most RATIO of the baseline's (default 1), the
-summed spend is no higher and no case scores lower; exit 1 otherwise, naming
-each miss; exit 2 when a run, a transcript, a timestamp, a grade or a price is
-missing or malformed, or a case has runs of one arm only.
+For every case that has a run of either arm, or each case named with --case,
+prints the median score, the median spend and the median wall time of each
+arm's runs (an arm's repeats sit in ARM, ARM-2, ARM-3). A run's wall time is
+the span from the earliest to the latest timestamp across its transcript and
+its subagents' transcripts. Exit 0 when the summed wall time is at most RATIO
+of the baseline's (default 1), the summed spend is no higher and no case scores
+lower; exit 1 otherwise, naming each miss; exit 2 when a run, a transcript, a
+timestamp, a grade or a price is missing or malformed, or a case has runs of
+one arm only.
 
 Not measured: load on the machine. Launch both arms in one batch so it affects
 them alike.
@@ -23,7 +25,7 @@ import json
 import math
 import re
 import sys
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -114,10 +116,6 @@ def _runs(case_dir: Path, arm: str) -> list[Path]:
     )
 
 
-def _cases(model_dir: Path, arm: str) -> set[str]:
-    return {path.name for path in model_dir.iterdir() if _runs(path, arm)}
-
-
 def _figures(runs: list[Path], prices: Prices) -> Figures:
     seconds = median(wall_seconds(run) for run in runs)
     return Figures(
@@ -127,29 +125,40 @@ def _figures(runs: list[Path], prices: Prices) -> Figures:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class Arm:
+    """An arm's runs: `name`, `name-2` and so on in each case under `model_dir`."""
+
+    model_dir: Path
+    name: str
+
+    def cases(self) -> set[str]:
+        return {path.name for path in self.model_dir.iterdir() if self.runs(path.name)}
+
+    def runs(self, case: str) -> list[Path]:
+        return _runs(self.model_dir / case, self.name)
+
+
 def load_arms(
-    model_dir: Path,
-    arm: str,
-    baseline_dir: Path,
-    baseline_arm: str,
-    prices: Prices,
+    new: Arm, baseline: Arm, prices: Prices, only: Collection[str] = ()
 ) -> Cases:
-    """Each case's baseline and new figures; ValueError if a case lacks an arm."""
-    new_cases = _cases(model_dir, arm)
-    old_cases = _cases(baseline_dir, baseline_arm)
-    for name in sorted(new_cases ^ old_cases):
-        missing, where = (
-            (arm, model_dir) if name in old_cases else (baseline_arm, baseline_dir)
-        )
-        raise ValueError(f"case {name} has no {missing} run in {where}")
-    if not new_cases:
-        raise ValueError(f"no case has a {arm} or {baseline_arm} run")
+    """Each case's baseline and new figures, for the cases in `only` if any.
+
+    Raises ValueError if a case lacks an arm.
+    """
+    found = {arm: arm.cases() for arm in (new, baseline)}
+    wanted = set(only) or found[new] | found[baseline]
+    for name in sorted(wanted):
+        for arm in (new, baseline):
+            if name not in found[arm]:
+                raise ValueError(
+                    f"case {name} has no {arm.name} run in {arm.model_dir}"
+                )
+    if not wanted:
+        raise ValueError(f"no case has a {new.name} or {baseline.name} run")
     return {
-        name: (
-            _figures(_runs(baseline_dir / name, baseline_arm), prices),
-            _figures(_runs(model_dir / name, arm), prices),
-        )
-        for name in sorted(new_cases)
+        name: (_figures(baseline.runs(name), prices), _figures(new.runs(name), prices))
+        for name in sorted(wanted)
     }
 
 
@@ -242,17 +251,23 @@ def main(argv: list[str] | None = None) -> int:
         help="the most wall time the arm may take, as a share of the baseline's",
     )
     parser.add_argument(
+        "--case",
+        action="append",
+        default=[],
+        dest="cases",
+        help="compare only this case; repeat for more",
+    )
+    parser.add_argument(
         "--reference", type=Path, default=DEFAULT_REFERENCE, help="the price table"
     )
     args = parser.parse_args(argv)
     baseline_iteration = args.baseline_iteration or args.iteration
     try:
         cases = load_arms(
-            args.iteration / args.model,
-            args.arm,
-            baseline_iteration / args.model,
-            args.against,
+            Arm(args.iteration / args.model, args.arm),
+            Arm(baseline_iteration / args.model, args.against),
             load_prices(args.reference),
+            args.cases,
         )
     except (OSError, ValueError) as err:
         print(f"cannot compare: {err}", file=sys.stderr)

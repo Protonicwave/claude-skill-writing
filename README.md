@@ -178,10 +178,10 @@ A skill arm that tries a variant of the skill or its settings is named for it, s
 
 ```
 uv run python evals/speed.py evals/workspace/iteration-10 --model opus --arm with_skill_medium --against with_skill_high --max-seconds-ratio 0.75
-uv run python evals/speed.py evals/workspace/iteration-11 --model opus --arm with_skill_search --against with_skill_medium --baseline-iteration evals/workspace/iteration-10
+uv run python evals/speed.py evals/workspace/iteration-11 --model opus --arm with_skill_search --against with_skill_medium --baseline-iteration evals/workspace/iteration-10 --case literature-review --case novelty-claim
 ```
 
-A run's wall time is the span from the earliest to the latest timestamp in its transcript and its subagents' transcripts, and a case's figure is the median over the arm's repeats. The command prints each case's score, spend and time beside the baseline's, with the summed time ratio beside its budget, and exits 1 when the time is over the ratio, the summed spend is higher or any case scores lower, and 2 when a run, transcript, timestamp or grade is missing or a case has runs of one arm only. Launch both arms in one batch so machine load affects them alike.
+A run's wall time is the span from the earliest to the latest timestamp in its transcript and its subagents' transcripts, and a case's figure is the median over the arm's repeats. The command prints each case's score, spend and time beside the baseline's, with the summed time ratio beside its budget, and exits 1 when the time is over the ratio, the summed spend is higher or any case scores lower, and 2 when a run, transcript, timestamp or grade is missing or a case has runs of one arm only. `--case NAME`, repeated, limits the comparison to the cases named, so an arm run on some cases can be set against a baseline that ran more. Launch both arms in one batch so machine load affects them alike.
 
 The verifier's own speed is timed on the fifteen sources in `evals/verify_timing.jsonl`, three cold runs in fresh processes:
 

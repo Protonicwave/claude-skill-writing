@@ -407,3 +407,32 @@ def test_exits_2_when_the_model_has_no_runs_of_either_arm(
     assert speed(iteration, reference) == 2
 
     assert "no case has a new or old run" in capsys.readouterr().err
+
+
+def test_compares_only_the_cases_named(
+    tmp_path: Path, reference: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    earlier = tmp_path / "earlier"
+    make_run(earlier / "opus" / "first" / "old", seconds=100, spend=10, passed=5)
+    make_run(earlier / "opus" / "second" / "old", seconds=300, spend=20, passed=6)
+    later = tmp_path / "later"
+    make_run(later / "opus" / "first" / "new", seconds=50, spend=9, passed=5)
+
+    code = speed(
+        later, reference, "--baseline-iteration", str(earlier), "--case", "first"
+    )
+
+    assert code == 0
+    rows = capsys.readouterr().out.splitlines()
+    assert [row.split()[0] for row in rows[1:-1]] == ["first", "total"]
+
+
+def test_exits_2_naming_a_named_case_with_no_runs(
+    tmp_path: Path, reference: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    iteration = tmp_path / "iteration"
+    two_cases(iteration)
+
+    assert speed(iteration, reference, "--case", "first", "--case", "third") == 2
+
+    assert "case third has no new run" in capsys.readouterr().err
