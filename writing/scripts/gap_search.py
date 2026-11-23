@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, assert_never
+from typing import Any
 from xml.etree import ElementTree
 
 # `python -I` leaves the script's own folder off sys.path, and verify.py sits in it.
@@ -48,7 +48,6 @@ from verify import (
     from_inverted_index,
     parse_arxiv_entry,
     parse_identifier,
-    visible_text,
 )
 
 QUERY_COUNT = 3
@@ -68,17 +67,12 @@ ARXIV_SEARCH = (
     f"https://export.arxiv.org/api/query?max_results={MAX_HITS_PER_REQUEST}"
     "&search_query="
 )
-CROSSREF_SEARCH = (
-    f"https://api.crossref.org/works?rows={MAX_HITS_PER_REQUEST}"
-    "&select=DOI,title,issued,abstract&query.bibliographic="
-)
 OPENALEX_ID_PREFIX = "https://openalex.org/"
 
 
 class Registry(StrEnum):
     OPENALEX = "OpenAlex"
     ARXIV = "arXiv"
-    CROSSREF = "Crossref"
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,12 +92,8 @@ class RequestOutcome:
     """What one request returned; `problem` is None when it was answered."""
 
     request: Request
-    hits: tuple[Hit, ...]
+    hit_count: int
     problem: str | None
-
-    @property
-    def hit_count(self) -> int:
-        return len(self.hits)
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,27 +152,18 @@ def normalise_queries(queries: Sequence[str]) -> tuple[str, ...]:
     """
     if len(queries) != QUERY_COUNT:
         raise ValueError(f"expected {QUERY_COUNT} queries, got {len(queries)}")
-    cleaned = tuple(normalise_query(query) for query in queries)
+    cleaned = tuple(clean_text(query) for query in queries)
+    for query in cleaned:
+        words = len(_search_words(query))
+        if not MIN_QUERY_WORDS <= words <= MAX_QUERY_WORDS:
+            raise ValueError(
+                f"expected {MIN_QUERY_WORDS} to {MAX_QUERY_WORDS} words in each "
+                f"query, got {words} in {query!r}"
+            )
     folded = [query.casefold() for query in cleaned]
     for index, query in enumerate(folded):
         if query in folded[:index]:
             raise ValueError(f"duplicate query {cleaned[index]!r}")
-    return cleaned
-
-
-def normalise_query(query: str) -> str:
-    """The query with control characters and extra spaces removed.
-
-    Raises ValueError when it has fewer than MIN_QUERY_WORDS or more than
-    MAX_QUERY_WORDS words.
-    """
-    cleaned = clean_text(query)
-    words = len(_search_words(cleaned))
-    if not MIN_QUERY_WORDS <= words <= MAX_QUERY_WORDS:
-        raise ValueError(
-            f"expected {MIN_QUERY_WORDS} to {MAX_QUERY_WORDS} words in each "
-            f"query, got {words} in {cleaned!r}"
-        )
     return cleaned
 
 
@@ -214,60 +195,50 @@ def search(
 ) -> SearchResult:
     """Send each query once to each registry, starting none after MAX_RUN_SECONDS."""
     deadline = now() + MAX_RUN_SECONDS
-    outcomes = tuple(
-        answer(request, fetch, deadline, now) for request in _requests(queries)
-    )
-    return SearchResult(outcomes, merge_hits(outcomes))
-
-
-def answer(
-    request: Request, fetch: Fetch, deadline: float, now: Callable[[], float]
-) -> RequestOutcome:
-    """Send one request unless `now` is past `deadline`, recording any failure."""
-    if now() > deadline:
-        problem = f"not searched: run time limit of {MAX_RUN_SECONDS:.0f} s reached"
-        return RequestOutcome(request, (), problem)
-    try:
-        return RequestOutcome(request, tuple(_ask(request, fetch)), None)
-    except RegistryUnavailableError as err:
-        return RequestOutcome(request, (), f"unavailable ({err})")
-    except MalformedAnswerError as err:
-        return RequestOutcome(request, (), f"malformed answer ({err})")
-
-
-def merge_hits(outcomes: Sequence[RequestOutcome]) -> tuple[Hit, ...]:
-    """Every hit of the outcomes, in order, each work once."""
+    outcomes: list[RequestOutcome] = []
     hits: list[Hit] = []
-    for outcome in outcomes:
-        for hit in outcome.hits:
+    for request in _requests(queries):
+        if now() > deadline:
+            problem = f"not searched: run time limit of {MAX_RUN_SECONDS:.0f} s reached"
+            outcomes.append(RequestOutcome(request, 0, problem))
+            continue
+        try:
+            found = _ask(request, fetch)
+        except RegistryUnavailableError as err:
+            outcomes.append(RequestOutcome(request, 0, f"unavailable ({err})"))
+            continue
+        except MalformedAnswerError as err:
+            outcomes.append(RequestOutcome(request, 0, f"malformed answer ({err})"))
+            continue
+        outcomes.append(RequestOutcome(request, len(found), None))
+        for hit in found:
             _add(hits, hit)
-    return tuple(hits)
+    return SearchResult(tuple(outcomes), tuple(hits))
 
 
 def _requests(queries: Sequence[str]) -> list[Request]:
     requests: list[Request] = []
     for number, query in enumerate(queries, start=1):
-        requests.append(openalex_request(number, query))
-        requests.append(arxiv_request(number, query))
+        # Each word must appear, which keeps arXiv's answers on the topic;
+        # quoting keeps a hyphenated word together.
+        arxiv_query = " AND ".join(f'all:"{word}"' for word in _search_words(query))
+        requests.append(
+            Request(
+                Registry.OPENALEX,
+                number,
+                query,
+                OPENALEX_SEARCH + urllib.parse.quote(query, safe=""),
+            )
+        )
+        requests.append(
+            Request(
+                Registry.ARXIV,
+                number,
+                query,
+                ARXIV_SEARCH + urllib.parse.quote(arxiv_query, safe=":"),
+            )
+        )
     return requests
-
-
-def openalex_request(number: int, query: str) -> Request:
-    url = OPENALEX_SEARCH + urllib.parse.quote(query, safe="")
-    return Request(Registry.OPENALEX, number, query, url)
-
-
-def arxiv_request(number: int, query: str) -> Request:
-    # Each word must appear, which keeps arXiv's answers on the topic;
-    # quoting keeps a hyphenated word together.
-    arxiv_query = " AND ".join(f'all:"{word}"' for word in _search_words(query))
-    url = ARXIV_SEARCH + urllib.parse.quote(arxiv_query, safe=":")
-    return Request(Registry.ARXIV, number, query, url)
-
-
-def crossref_request(number: int, query: str) -> Request:
-    url = CROSSREF_SEARCH + urllib.parse.quote(query, safe="")
-    return Request(Registry.CROSSREF, number, query, url)
 
 
 def _ask(request: Request, fetch: Fetch) -> list[Hit]:
@@ -275,15 +246,9 @@ def _ask(request: Request, fetch: Fetch) -> list[Hit]:
     if body is None:
         # A search address never has a legitimate 404: the registry moved it.
         raise RegistryUnavailableError(f"{request.url}: HTTP 404")
-    match request.registry:
-        case Registry.OPENALEX:
-            return _openalex_hits(body, request.label)
-        case Registry.ARXIV:
-            return _arxiv_hits(body, request.label)
-        case Registry.CROSSREF:
-            return _crossref_hits(body, request.label)
-        case unreachable:  # pragma: no cover: every registry is matched above
-            assert_never(unreachable)
+    if request.registry is Registry.OPENALEX:
+        return _openalex_hits(body, request.label)
+    return _arxiv_hits(body, request.label)
 
 
 def _add(hits: list[Hit], found: Hit) -> None:
@@ -331,48 +296,6 @@ def _openalex_hit(work: dict[str, Any], label: str) -> Hit:
         abstract=clean_text(from_inverted_index(work.get("abstract_inverted_index"))),
         found_by=(label,),
     )
-
-
-def _crossref_hits(body: bytes, label: str) -> list[Hit]:
-    try:
-        document = json.loads(body)
-    except (ValueError, RecursionError) as err:
-        raise MalformedAnswerError(f"not JSON: {err}") from err
-    message = document.get("message") if isinstance(document, dict) else None
-    items = message.get("items") if isinstance(message, dict) else None
-    if not isinstance(items, list):
-        raise MalformedAnswerError("no list of items")
-    return [
-        _crossref_hit(item, label)
-        for item in items[:MAX_HITS_PER_REQUEST]
-        if isinstance(item, dict)
-    ]
-
-
-def _crossref_hit(item: dict[str, Any], label: str) -> Hit:
-    doi, arxiv = _doi_or_arxiv(item.get("DOI"))
-    titles = item.get("title")
-    title = titles[0] if isinstance(titles, list) and titles else ""
-    abstract = item.get("abstract")
-    return Hit(
-        doi=doi,
-        arxiv=arxiv,
-        openalex=None,
-        year=_issued_year(item.get("issued")),
-        title=clean_text(title) if isinstance(title, str) else "",
-        # Crossref abstracts are JATS markup, maths included.
-        abstract=clean_text(visible_text(abstract))
-        if isinstance(abstract, str)
-        else "",
-        found_by=(label,),
-    )
-
-
-def _issued_year(issued: object) -> int | None:
-    parts = issued.get("date-parts") if isinstance(issued, dict) else None
-    first = parts[0] if isinstance(parts, list) and parts else None
-    year = first[0] if isinstance(first, list) and first else None
-    return year if isinstance(year, int) and not isinstance(year, bool) else None
 
 
 def _doi_or_arxiv(raw: object) -> tuple[str | None, str | None]:
@@ -432,8 +355,7 @@ def _identifiers(hit: Hit) -> str:
     return " ".join(names) or f"OpenAlex:{hit.openalex}"
 
 
-def hit_cells(hit: Hit) -> tuple[str, ...]:
-    """Identifiers, year, title, abstract start and finders, cleaned for a table."""
+def _hit_cells(hit: Hit) -> tuple[str, ...]:
     return (
         _identifiers(hit),
         "no year" if hit.year is None else str(hit.year),
@@ -443,7 +365,7 @@ def hit_cells(hit: Hit) -> tuple[str, ...]:
     )
 
 
-def problem_line(outcome: RequestOutcome) -> str:
+def _problem_line(outcome: RequestOutcome) -> str:
     request = outcome.request
     return f'{request.label} "{request.query}": {outcome.problem}'
 
@@ -458,12 +380,12 @@ def render_report(result: SearchResult, log: Path) -> str:
     lines = [
         f"Answered {answered} of {len(result.requests)} requests; "
         f"{len(result.hits)} hits. Log: {log}",
-        *(problem_line(outcome) for outcome in result.requests if outcome.problem),
+        *(_problem_line(outcome) for outcome in result.requests if outcome.problem),
         "",
     ]
     size = sum(len(line) + 1 for line in lines)
     for printed, hit in enumerate(result.hits):
-        line = " | ".join(hit_cells(hit))
+        line = " | ".join(_hit_cells(hit))
         rest = f"{len(result.hits) - printed} more hits are in the log."
         if size + len(line) + 1 + len(rest) + 1 > MAX_PRINTED_CHARACTERS:
             lines.append(rest)
@@ -499,7 +421,7 @@ def render_log(queries: Sequence[str], result: SearchResult, searched: date) -> 
         "| Identifiers | Year | Title | Abstract, first "
         f"{MAX_ABSTRACT_CHARACTERS} characters | Found by |",
         "|---|---|---|---|---|",
-        *("| " + " | ".join(hit_cells(hit)) + " |" for hit in result.hits),
+        *("| " + " | ".join(_hit_cells(hit)) + " |" for hit in result.hits),
     ]
     return "\n".join(lines) + "\n"
 

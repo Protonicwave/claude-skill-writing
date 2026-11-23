@@ -27,7 +27,7 @@ A named tone ("warmer", "shorter") also needs `voice.md`. Everywhere: UK spellin
 Each turn rereads the conversation: read everything the tier names in one turn.
 
 - **Light**, a message or an edit the request spells out: the register, unless the request names every change. Run only `scripts/check.py`, fixing only your own words.
-- **Full**, text drawing on published work: the Standard files, `review.md`, `sources.md`, `sources-search.md` with `scripts/find_sources.py`, `scripts/gap_search.py`.
+- **Full**, text drawing on published work: the Standard files, `review.md`, `sources.md`, `sources-search.md` and its `scripts/gap_search.py`.
 - **Standard**, anything else: the register, `clarity.md`, `tells.md`, and `review.md` for a rubric, an explainer or over 400 words.
 
 Never open a script's source. After spawning a subagent, end the turn: it reports when done, so never poll or sleep. Revise with edits, not rewrites.
