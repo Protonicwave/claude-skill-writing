@@ -92,8 +92,12 @@ class RequestOutcome:
     """What one request returned; `problem` is None when it was answered."""
 
     request: Request
-    hit_count: int
+    hits: tuple[Hit, ...]
     problem: str | None
+
+    @property
+    def hit_count(self) -> int:
+        return len(self.hits)
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,18 +156,27 @@ def normalise_queries(queries: Sequence[str]) -> tuple[str, ...]:
     """
     if len(queries) != QUERY_COUNT:
         raise ValueError(f"expected {QUERY_COUNT} queries, got {len(queries)}")
-    cleaned = tuple(clean_text(query) for query in queries)
-    for query in cleaned:
-        words = len(_search_words(query))
-        if not MIN_QUERY_WORDS <= words <= MAX_QUERY_WORDS:
-            raise ValueError(
-                f"expected {MIN_QUERY_WORDS} to {MAX_QUERY_WORDS} words in each "
-                f"query, got {words} in {query!r}"
-            )
+    cleaned = tuple(normalise_query(query) for query in queries)
     folded = [query.casefold() for query in cleaned]
     for index, query in enumerate(folded):
         if query in folded[:index]:
             raise ValueError(f"duplicate query {cleaned[index]!r}")
+    return cleaned
+
+
+def normalise_query(query: str) -> str:
+    """The query with control characters and extra spaces removed.
+
+    Raises ValueError when it has fewer than MIN_QUERY_WORDS or more than
+    MAX_QUERY_WORDS words.
+    """
+    cleaned = clean_text(query)
+    words = len(_search_words(cleaned))
+    if not MIN_QUERY_WORDS <= words <= MAX_QUERY_WORDS:
+        raise ValueError(
+            f"expected {MIN_QUERY_WORDS} to {MAX_QUERY_WORDS} words in each "
+            f"query, got {words} in {cleaned!r}"
+        )
     return cleaned
 
 
@@ -195,50 +208,55 @@ def search(
 ) -> SearchResult:
     """Send each query once to each registry, starting none after MAX_RUN_SECONDS."""
     deadline = now() + MAX_RUN_SECONDS
-    outcomes: list[RequestOutcome] = []
+    outcomes = tuple(
+        answer(request, fetch, deadline, now) for request in _requests(queries)
+    )
+    return SearchResult(outcomes, merge_hits(outcomes))
+
+
+def answer(
+    request: Request, fetch: Fetch, deadline: float, now: Callable[[], float]
+) -> RequestOutcome:
+    """Send one request unless `now` is past `deadline`, recording any failure."""
+    if now() > deadline:
+        problem = f"not searched: run time limit of {MAX_RUN_SECONDS:.0f} s reached"
+        return RequestOutcome(request, (), problem)
+    try:
+        return RequestOutcome(request, tuple(_ask(request, fetch)), None)
+    except RegistryUnavailableError as err:
+        return RequestOutcome(request, (), f"unavailable ({err})")
+    except MalformedAnswerError as err:
+        return RequestOutcome(request, (), f"malformed answer ({err})")
+
+
+def merge_hits(outcomes: Sequence[RequestOutcome]) -> tuple[Hit, ...]:
+    """Every hit of the outcomes, in order, each work once."""
     hits: list[Hit] = []
-    for request in _requests(queries):
-        if now() > deadline:
-            problem = f"not searched: run time limit of {MAX_RUN_SECONDS:.0f} s reached"
-            outcomes.append(RequestOutcome(request, 0, problem))
-            continue
-        try:
-            found = _ask(request, fetch)
-        except RegistryUnavailableError as err:
-            outcomes.append(RequestOutcome(request, 0, f"unavailable ({err})"))
-            continue
-        except MalformedAnswerError as err:
-            outcomes.append(RequestOutcome(request, 0, f"malformed answer ({err})"))
-            continue
-        outcomes.append(RequestOutcome(request, len(found), None))
-        for hit in found:
+    for outcome in outcomes:
+        for hit in outcome.hits:
             _add(hits, hit)
-    return SearchResult(tuple(outcomes), tuple(hits))
+    return tuple(hits)
 
 
 def _requests(queries: Sequence[str]) -> list[Request]:
     requests: list[Request] = []
     for number, query in enumerate(queries, start=1):
-        # Each word must appear, which keeps arXiv's answers on the topic;
-        # quoting keeps a hyphenated word together.
-        arxiv_query = " AND ".join(f'all:"{word}"' for word in _search_words(query))
-        requests.append(
-            Request(
-                Registry.OPENALEX,
-                number,
-                query,
-                OPENALEX_SEARCH + urllib.parse.quote(query, safe=""),
-            )
-        )
-        requests.append(
-            Request(
-                Registry.ARXIV,
-                number,
-                query,
-                ARXIV_SEARCH + urllib.parse.quote(arxiv_query, safe=":"),
-            )
-        )
+        requests.append(openalex_request(number, query))
+        requests.append(arxiv_request(number, query))
     return requests
+
+
+def openalex_request(number: int, query: str) -> Request:
+    url = OPENALEX_SEARCH + urllib.parse.quote(query, safe="")
+    return Request(Registry.OPENALEX, number, query, url)
+
+
+def arxiv_request(number: int, query: str) -> Request:
+    # Each word must appear, which keeps arXiv's answers on the topic;
+    # quoting keeps a hyphenated word together.
+    arxiv_query = " AND ".join(f'all:"{word}"' for word in _search_words(query))
+    url = ARXIV_SEARCH + urllib.parse.quote(arxiv_query, safe=":")
+    return Request(Registry.ARXIV, number, query, url)
 
 
 def _ask(request: Request, fetch: Fetch) -> list[Hit]:
@@ -355,7 +373,8 @@ def _identifiers(hit: Hit) -> str:
     return " ".join(names) or f"OpenAlex:{hit.openalex}"
 
 
-def _hit_cells(hit: Hit) -> tuple[str, ...]:
+def hit_cells(hit: Hit) -> tuple[str, ...]:
+    """Identifiers, year, title, abstract start and finders, cleaned for a table."""
     return (
         _identifiers(hit),
         "no year" if hit.year is None else str(hit.year),
@@ -365,7 +384,7 @@ def _hit_cells(hit: Hit) -> tuple[str, ...]:
     )
 
 
-def _problem_line(outcome: RequestOutcome) -> str:
+def problem_line(outcome: RequestOutcome) -> str:
     request = outcome.request
     return f'{request.label} "{request.query}": {outcome.problem}'
 
@@ -380,12 +399,12 @@ def render_report(result: SearchResult, log: Path) -> str:
     lines = [
         f"Answered {answered} of {len(result.requests)} requests; "
         f"{len(result.hits)} hits. Log: {log}",
-        *(_problem_line(outcome) for outcome in result.requests if outcome.problem),
+        *(problem_line(outcome) for outcome in result.requests if outcome.problem),
         "",
     ]
     size = sum(len(line) + 1 for line in lines)
     for printed, hit in enumerate(result.hits):
-        line = " | ".join(_hit_cells(hit))
+        line = " | ".join(hit_cells(hit))
         rest = f"{len(result.hits) - printed} more hits are in the log."
         if size + len(line) + 1 + len(rest) + 1 > MAX_PRINTED_CHARACTERS:
             lines.append(rest)
@@ -421,7 +440,7 @@ def render_log(queries: Sequence[str], result: SearchResult, searched: date) -> 
         "| Identifiers | Year | Title | Abstract, first "
         f"{MAX_ABSTRACT_CHARACTERS} characters | Found by |",
         "|---|---|---|---|---|",
-        *("| " + " | ".join(_hit_cells(hit)) + " |" for hit in result.hits),
+        *("| " + " | ".join(hit_cells(hit)) + " |" for hit in result.hits),
     ]
     return "\n".join(lines) + "\n"
 
