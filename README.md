@@ -75,7 +75,7 @@ The eval scripts that price, hide, compare and time runs, and the gap search, ne
 
 ```
 uv run coverage run --branch --source=evals,writing/scripts -m pytest
-uv run coverage report --show-missing --fail-under=100 --include=evals/spend.py,evals/compare.py,evals/blind.py,evals/speed.py,writing/scripts/gap_search.py
+uv run coverage report --show-missing --fail-under=100 --include=evals/spend.py,evals/compare.py,evals/blind.py,evals/speed.py,evals/verify_timing.py,writing/scripts/gap_search.py
 uv run coverage erase
 uv export --format pylock.toml --no-emit-project -o <scratch>/pylock.toml && uv run pip-audit --locked <scratch>
 ```
@@ -173,5 +173,13 @@ uv run python evals/speed.py evals/workspace/iteration-11 --model opus --arm wit
 ```
 
 A run's wall time is the span from the earliest to the latest timestamp in its transcript and its subagents' transcripts, and a case's figure is the median over the arm's repeats. The command prints each case's score, spend and time beside the baseline's, with the summed time ratio beside its budget, and exits 1 when the time is over the ratio, the summed spend is higher or any case scores lower, and 2 when a run, transcript, timestamp or grade is missing or a case has runs of one arm only. Launch both arms in one batch so machine load affects them alike.
+
+The verifier's own speed is timed on the fifteen sources in `evals/verify_timing.jsonl`, three cold runs in fresh processes:
+
+```
+uv run python evals/verify_timing.py
+```
+
+It prints each run's seconds, the median and the budget, 0.6 of the 7.4 s median measured when sources were fetched one at a time, and exits 1 when the median is over it and 2 when a run fails to verify every source. `--max-seconds` and `--runs` change the budget and the number of runs. Registry latency varies by hour, so compare figures taken minutes apart.
 
 `evals/baseline.md` records the score of the skill before any change, `evals/after-upgrade.md` the score after the review passes, tones and new registers were added, `evals/after-efficiency.md` the score and cost after the work to cut tokens, and `evals/after-quality.md` the score and cost after the expectations for review passes and source search were added and the sources procedure was changed, which set the current reference. `evals/before-judgement.md` and `evals/after-judgement.md` record all four arms before the judgement changes and the with-skill arms after them, with the spend budgets and the rerun that followed a change to the notes rule. `evals/after-gap-search.md` records the skill against deep research on the six research cases, every run's score and spend, after the gap search was added. `evals/effort.md` records the skill on Opus at medium and at high effort on the research and decision cases, with wall time, and why medium was chosen.
