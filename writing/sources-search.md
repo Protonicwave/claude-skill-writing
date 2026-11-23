@@ -7,7 +7,7 @@ The search is sized for the claims in one piece of writing, up to about 15 sourc
 ## All claims at once
 
 1. List every claim that needs a source, each as one checkable sentence, with its number if it has one.
-2. Give each claim two to four queries of three to six words, the most specific first: only the first also goes to arXiv. Write them all to `claims.json` in the draft's folder as `[{"claim": "...", "queries": ["...", "..."]}]` and search for every claim in one run, with a 5-minute command timeout:
+2. Give each claim two to four queries of three to six words, the most specific first: it goes to OpenAlex and arXiv, the rest to Crossref. Write them all to `claims.json` in the draft's folder as `[{"claim": "...", "queries": ["...", "..."]}]` and search for every claim in one run, with a 5-minute command timeout:
 
    ```
    python -I "<this skill's directory>/scripts/find_sources.py" --log <draft's folder>/source-search.md <draft's folder>/claims.json

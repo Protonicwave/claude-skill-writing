@@ -8,9 +8,12 @@ claim as one sentence and 2 to 4 queries of two to eight words:
 
     [{"claim": "The Ising model ...", "queries": ["...", "..."]}]
 
-Every query goes to the OpenAlex search, four at a time, and each claim's
-first query also goes to the arXiv search, one request every three seconds
-alongside. At most five hits are kept from each answer. Hits print under their
+Each claim's first query goes to the OpenAlex and arXiv searches, and its
+other queries to the Crossref search, so a claim costs one search of
+OpenAlex's daily budget. OpenAlex requests run four at a time beside one lane
+for arXiv, a request every three seconds, and one for Crossref, a request at a
+time. A Crossref hit has an abstract only where the publisher deposited one.
+At most five hits are kept from each answer. Hits print under their
 claim, a work that several of the claim's requests found once and first, each
 on one line: identifiers, year, title, the start of the abstract and the
 requests that found it. Each claim prints at most its share of
@@ -50,6 +53,7 @@ from gap_search import (
     answer,
     arxiv_request,
     clean_text,
+    crossref_request,
     hit_cells,
     merge_hits,
     normalise_query,
@@ -130,11 +134,12 @@ def _claim(number: int, item: object) -> Claim:
 
 
 def _claim_requests(claim: Claim) -> list[Request]:
-    openalex = [
-        openalex_request(number, query)
-        for number, query in enumerate(claim.queries, start=1)
+    first = claim.queries[0]
+    others = [
+        crossref_request(number, query)
+        for number, query in enumerate(claim.queries[1:], start=2)
     ]
-    return [*openalex, arxiv_request(1, claim.queries[0])]
+    return [openalex_request(1, first), arxiv_request(1, first), *others]
 
 
 def search_claims(
@@ -142,8 +147,9 @@ def search_claims(
 ) -> tuple[ClaimResult, ...]:
     """Send every claim's requests, starting none after MAX_RUN_SECONDS.
 
-    OpenAlex requests run MAX_OPENALEX_AT_ONCE at a time and arXiv requests
-    one after another alongside, so arXiv's spacing never holds up OpenAlex.
+    OpenAlex requests run MAX_OPENALEX_AT_ONCE at a time; arXiv's and
+    Crossref's each run one after another in a lane of their own, as those
+    registries ask, so neither's spacing holds up the others.
     """
     deadline = now() + MAX_RUN_SECONDS
     per_claim = [_claim_requests(claim) for claim in claims]
@@ -154,14 +160,15 @@ def search_claims(
     with (
         ThreadPoolExecutor(MAX_OPENALEX_AT_ONCE) as openalex_pool,
         ThreadPoolExecutor(1) as arxiv_lane,
+        ThreadPoolExecutor(1) as crossref_lane,
     ):
+        lanes = {
+            Registry.OPENALEX: openalex_pool,
+            Registry.ARXIV: arxiv_lane,
+            Registry.CROSSREF: crossref_lane,
+        }
         pending = [
-            [
-                (
-                    arxiv_lane if request.registry is Registry.ARXIV else openalex_pool
-                ).submit(send, request)
-                for request in requests
-            ]
+            [lanes[request.registry].submit(send, request) for request in requests]
             for requests in per_claim
         ]
         outcomes = [tuple(future.result() for future in futures) for futures in pending]

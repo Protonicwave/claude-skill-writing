@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, assert_never
 from xml.etree import ElementTree
 
 # `python -I` leaves the script's own folder off sys.path, and verify.py sits in it.
@@ -48,6 +48,7 @@ from verify import (
     from_inverted_index,
     parse_arxiv_entry,
     parse_identifier,
+    visible_text,
 )
 
 QUERY_COUNT = 3
@@ -67,12 +68,17 @@ ARXIV_SEARCH = (
     f"https://export.arxiv.org/api/query?max_results={MAX_HITS_PER_REQUEST}"
     "&search_query="
 )
+CROSSREF_SEARCH = (
+    f"https://api.crossref.org/works?rows={MAX_HITS_PER_REQUEST}"
+    "&select=DOI,title,issued,abstract&query.bibliographic="
+)
 OPENALEX_ID_PREFIX = "https://openalex.org/"
 
 
 class Registry(StrEnum):
     OPENALEX = "OpenAlex"
     ARXIV = "arXiv"
+    CROSSREF = "Crossref"
 
 
 @dataclass(frozen=True, slots=True)
@@ -259,14 +265,25 @@ def arxiv_request(number: int, query: str) -> Request:
     return Request(Registry.ARXIV, number, query, url)
 
 
+def crossref_request(number: int, query: str) -> Request:
+    url = CROSSREF_SEARCH + urllib.parse.quote(query, safe="")
+    return Request(Registry.CROSSREF, number, query, url)
+
+
 def _ask(request: Request, fetch: Fetch) -> list[Hit]:
     body = fetch(request.url)
     if body is None:
         # A search address never has a legitimate 404: the registry moved it.
         raise RegistryUnavailableError(f"{request.url}: HTTP 404")
-    if request.registry is Registry.OPENALEX:
-        return _openalex_hits(body, request.label)
-    return _arxiv_hits(body, request.label)
+    match request.registry:
+        case Registry.OPENALEX:
+            return _openalex_hits(body, request.label)
+        case Registry.ARXIV:
+            return _arxiv_hits(body, request.label)
+        case Registry.CROSSREF:
+            return _crossref_hits(body, request.label)
+        case unreachable:  # pragma: no cover: every registry is matched above
+            assert_never(unreachable)
 
 
 def _add(hits: list[Hit], found: Hit) -> None:
@@ -314,6 +331,48 @@ def _openalex_hit(work: dict[str, Any], label: str) -> Hit:
         abstract=clean_text(from_inverted_index(work.get("abstract_inverted_index"))),
         found_by=(label,),
     )
+
+
+def _crossref_hits(body: bytes, label: str) -> list[Hit]:
+    try:
+        document = json.loads(body)
+    except (ValueError, RecursionError) as err:
+        raise MalformedAnswerError(f"not JSON: {err}") from err
+    message = document.get("message") if isinstance(document, dict) else None
+    items = message.get("items") if isinstance(message, dict) else None
+    if not isinstance(items, list):
+        raise MalformedAnswerError("no list of items")
+    return [
+        _crossref_hit(item, label)
+        for item in items[:MAX_HITS_PER_REQUEST]
+        if isinstance(item, dict)
+    ]
+
+
+def _crossref_hit(item: dict[str, Any], label: str) -> Hit:
+    doi, arxiv = _doi_or_arxiv(item.get("DOI"))
+    titles = item.get("title")
+    title = titles[0] if isinstance(titles, list) and titles else ""
+    abstract = item.get("abstract")
+    return Hit(
+        doi=doi,
+        arxiv=arxiv,
+        openalex=None,
+        year=_issued_year(item.get("issued")),
+        title=clean_text(title) if isinstance(title, str) else "",
+        # Crossref abstracts are JATS markup, maths included.
+        abstract=clean_text(visible_text(abstract))
+        if isinstance(abstract, str)
+        else "",
+        found_by=(label,),
+    )
+
+
+def _issued_year(issued: object) -> int | None:
+    parts = issued.get("date-parts") if isinstance(issued, dict) else None
+    first = parts[0] if isinstance(parts, list) and parts else None
+    year = first[0] if isinstance(first, list) and first else None
+    return year if isinstance(year, int) and not isinstance(year, bool) else None
 
 
 def _doi_or_arxiv(raw: object) -> tuple[str | None, str | None]:

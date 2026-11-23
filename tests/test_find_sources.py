@@ -62,10 +62,28 @@ def feed(*arxiv_ids: str) -> bytes:
     ).encode()
 
 
+def crossref(*items: object) -> bytes:
+    return json.dumps({"status": "ok", "message": {"items": list(items)}}).encode()
+
+
+def crossref_item(number: int, **fields: object) -> dict[str, object]:
+    return {
+        "DOI": f"10.1000/W{number}",
+        "title": [f"Crossref work {number}"],
+        "issued": {"date-parts": [[2021, 3]]},
+        **fields,
+    }
+
+
+def registry_of(url: str) -> str:
+    return next(name for name in ("arxiv", "crossref", "openalex") if name in url)
+
+
 def searched(url: str) -> str:
     fields = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
-    if "search" in fields:
-        return fields["search"][0]
+    for name in ("search", "query.bibliographic"):
+        if name in fields:
+            return fields[name][0]
     terms = fields["search_query"][0].split(" AND ")
     return " ".join(term.split(":")[1].strip('"') for term in terms)
 
@@ -86,13 +104,15 @@ class FakeRegistry:
     def __call__(self, url: str) -> bytes | None:
         with self.lock:
             self.requested.append(url)
-        registry = "arxiv" if "arxiv" in url else "openalex"
+        registry = registry_of(url)
         answer = self.routes.get((registry, searched(url)))
         if isinstance(answer, Exception):
             raise answer
         if answer is not None:
             return answer
-        return feed() if "arxiv" in url else openalex()
+        if registry == "arxiv":
+            return feed()
+        return crossref() if registry == "crossref" else openalex()
 
 
 def write_claims(folder: Path, claims: object) -> Path:
@@ -112,16 +132,18 @@ def run_main(
     return main(["--log", str(folder / "source-search.md"), str(claims_path)])
 
 
-def test_sends_every_query_to_openalex_and_each_first_query_to_arxiv() -> None:
+def test_sends_first_queries_to_openalex_and_arxiv_and_the_rest_to_crossref() -> None:
     registry = FakeRegistry()
 
     search_claims(find_sources.parse_claims(json.dumps(CLAIMS)), registry)
 
-    openalex_words = [searched(u) for u in registry.requested if "openalex" in u]
-    arxiv_words = [searched(u) for u in registry.requested if "arxiv" in u]
-    every_query = [query for claim in CLAIMS for query in claim["queries"]]
-    assert sorted(openalex_words) == sorted(every_query)
-    assert arxiv_words == [claim["queries"][0] for claim in CLAIMS]
+    def words(name: str) -> list[str]:
+        return sorted(searched(u) for u in registry.requested if registry_of(u) == name)
+
+    firsts = sorted(claim["queries"][0] for claim in CLAIMS)
+    assert words("openalex") == firsts
+    assert words("arxiv") == firsts
+    assert words("crossref") == sorted(q for c in CLAIMS for q in c["queries"][1:])
 
 
 def test_lists_each_claims_hits_under_it_and_each_work_once() -> None:
@@ -130,7 +152,7 @@ def test_lists_each_claims_hits_under_it_and_each_work_once() -> None:
             ("openalex", "neural network sampler Ising model"): openalex(
                 work(1), work(2)
             ),
-            ("openalex", "autoregressive network spins"): openalex(work(2)),
+            ("crossref", "autoregressive network spins"): crossref(crossref_item(2)),
             ("openalex", "self-learning Monte Carlo"): openalex(work(2), work(3)),
         }
     )
@@ -146,14 +168,14 @@ def test_sends_openalex_queries_four_at_a_time() -> None:
     arrived = threading.Barrier(4, timeout=2)
 
     def fetch(url: str) -> bytes:
-        if "arxiv" in url:
-            return feed()
+        if registry_of(url) != "openalex":
+            return FakeRegistry()(url) or b""
         arrived.wait()
         return openalex()
 
     claims = [
         {"claim": f"Claim {n}.", "queries": [f"first query {n}", f"second query {n}"]}
-        for n in range(2)
+        for n in range(4)
     ]
     results = search_claims(find_sources.parse_claims(json.dumps(claims)), fetch)
 
@@ -220,6 +242,35 @@ def test_main_logs_each_abstract_whole_and_prints_its_start(
     assert whole in (tmp_path / "source-search.md").read_text(encoding="utf-8")
 
 
+def test_reads_a_crossref_hit_with_its_abstract_as_plain_text() -> None:
+    jats = "<jats:p>We decode the <i>surface</i> code.</jats:p>"
+    registry = FakeRegistry(
+        {
+            ("crossref", "autoregressive network spins"): crossref(
+                crossref_item(5, abstract=jats),
+                crossref_item(6, issued={"date-parts": [[None]]}, title=[]),
+                "not a work",
+            ),
+            ("crossref", "effective Hamiltonian cluster updates"): crossref(
+                crossref_item(7, DOI="10.48550/arXiv.2101.00001")
+            ),
+            ("crossref", "machine learning Monte Carlo"): b'{"message": {}}',
+        }
+    )
+
+    first, second = search_claims(
+        find_sources.parse_claims(json.dumps(CLAIMS)), registry
+    )
+
+    assert [(h.doi, h.year, h.title, h.abstract) for h in first.hits] == [
+        ("10.1000/w5", 2021, "Crossref work 5", "We decode the surface code."),
+        ("10.1000/w6", None, "", ""),
+    ]
+    assert [hit.arxiv for hit in second.hits] == ["2101.00001"]
+    problems = [o.problem for o in second.requests if o.problem]
+    assert problems == ["malformed answer (no list of items)"]
+
+
 def test_main_exits_1_naming_a_failed_request_and_prints_the_other_hits(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -229,7 +280,7 @@ def test_main_exits_1_naming_a_failed_request_and_prints_the_other_hits(
                 "openalex",
                 "neural network sampler Ising model",
             ): RegistryUnavailableError("HTTP 503"),
-            ("openalex", "autoregressive network spins"): b"<html>not json</html>",
+            ("crossref", "autoregressive network spins"): b"<html>not json</html>",
             ("openalex", "self-learning Monte Carlo"): openalex(work(3)),
         }
     )
