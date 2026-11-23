@@ -25,11 +25,13 @@ word for word in the registry abstract or, when `text` names one, in a saved
 copy of the full text: plain text or HTML, inside the input file's folder
 (the current folder for standard input).
 
-Prints the verification log as a Markdown table, a row as each source is
-checked. Registry responses are kept for 24 hours in `<sources stem>.cache.json`
-beside the input file, so a rerun makes no repeat requests; standard input
-keeps no cache. Exits 0 if every source is verified, 1 if any is not, 2 if the
-input cannot be read or is invalid, and 3 if the run stops on a fault.
+Checks up to four sources at once, within each registry's published rate
+limits, and prints the verification log as a Markdown table, a row as each
+source is checked, in input order. Registry responses are kept for 24 hours
+in `<sources stem>.cache.json` beside the input file, so a rerun makes no
+repeat requests; standard input keeps no cache. Exits 0 if every source is
+verified, 1 if any is not, 2 if the input cannot be read or is invalid, and 3
+if the run stops on a fault.
 
 `--bib` writes a BibTeX entry for each source whose cited fields all matched
 (VERIFIED or CLAIM NOT CHECKED), built from the registry record rather than
@@ -58,12 +60,14 @@ import math
 import os
 import re
 import sys
+import threading
 import time
 import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Collection, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from datetime import date
 from enum import StrEnum
@@ -90,6 +94,11 @@ BACKOFF_BASE_SECONDS = 2.0
 MAX_RETRY_WAIT_SECONDS = 30.0
 # arXiv asks for one request every three seconds.
 ARXIV_INTERVAL_SECONDS = 3.0
+# Crossref's public pool takes one request at a time, five a second; OpenAlex
+# takes ten a second.
+CROSSREF_INTERVAL_SECONDS = 0.2
+OTHER_HOST_INTERVAL_SECONDS = 0.1
+MAX_CONCURRENT_SOURCES = 4
 EARLIEST_YEAR = 1600
 YEAR_DIGITS = 4
 USER_AGENT = "writing-skill-verify/0.1"
@@ -105,6 +114,7 @@ OPENALEX_FIELDS = "?select=is_retracted,abstract_inverted_index,open_access"
 ARXIV_QUERY = "https://export.arxiv.org/api/query?id_list="
 ARXIV_ABS = "https://arxiv.org/abs/"
 ARXIV_HOST = "export.arxiv.org"
+CROSSREF_HOST = "api.crossref.org"
 ARXIV_DOI_PREFIX = "10.48550/arxiv."
 
 _HTTP_NOT_FOUND = 404
@@ -544,41 +554,75 @@ class RegistryUnavailableError(Exception):
     """A registry could not answer: rate limited, down, unreachable or oversized."""
 
 
-class RegistryClient:
-    """Fetches registry URLs with bounded retries and arXiv's request spacing.
+class _HostTurns:
+    """When the next request to one host may start, and how many may run at once."""
 
-    Returns the body, or None for HTTP 404. Raises RegistryUnavailableError
-    when the registry cannot answer within MAX_ATTEMPTS.
+    def __init__(self, concurrent: int, interval_seconds: float) -> None:
+        self.slots = threading.BoundedSemaphore(concurrent)
+        self.interval_seconds = interval_seconds
+        self.next_start = -math.inf
+
+
+def _host_turns(host: str) -> _HostTurns:
+    if host == ARXIV_HOST:
+        return _HostTurns(1, ARXIV_INTERVAL_SECONDS)
+    if host == CROSSREF_HOST:
+        return _HostTurns(1, CROSSREF_INTERVAL_SECONDS)
+    return _HostTurns(MAX_CONCURRENT_SOURCES, OTHER_HOST_INTERVAL_SECONDS)
+
+
+class RegistryClient:
+    """Fetches registry URLs with bounded retries, safe to call from threads.
+
+    Each host gets the request rate and the number of requests at once that
+    it allows, and a wait one answer asks for holds back every request to
+    that host. Returns the body, or None for HTTP 404. Raises
+    RegistryUnavailableError when the registry cannot answer within
+    MAX_ATTEMPTS.
     """
 
     def __init__(self) -> None:
-        self._last_arxiv_request = -math.inf
+        self._lock = threading.Lock()
+        self._hosts: dict[str, _HostTurns] = {}
 
     def __call__(self, url: str) -> bytes | None:
         host = urllib.parse.urlsplit(url).hostname or url
-        for attempt in range(1, MAX_ATTEMPTS + 1):
-            self._space_arxiv(host)
-            try:
-                return _get(url)
-            except urllib.error.HTTPError as err:
-                if err.code == _HTTP_NOT_FOUND:
-                    return None
-                if err.code not in _RETRYABLE_STATUSES or attempt == MAX_ATTEMPTS:
-                    raise RegistryUnavailableError(f"{host}: HTTP {err.code}") from err
-                time.sleep(_retry_wait(err.headers.get("Retry-After"), attempt))
-            except (OSError, http.client.HTTPException) as err:
-                if attempt == MAX_ATTEMPTS:
-                    raise RegistryUnavailableError(f"{host}: {err}") from err
-                time.sleep(_retry_wait(None, attempt))
+        turns = self._turns(host)
+        with turns.slots:
+            for attempt in range(1, MAX_ATTEMPTS + 1):
+                self._wait_turn(turns)
+                try:
+                    return _get(url)
+                except urllib.error.HTTPError as err:
+                    if err.code == _HTTP_NOT_FOUND:
+                        return None
+                    if err.code not in _RETRYABLE_STATUSES or attempt == MAX_ATTEMPTS:
+                        raise RegistryUnavailableError(
+                            f"{host}: HTTP {err.code}"
+                        ) from err
+                    asked = err.headers.get("Retry-After")
+                    self._hold(turns, _retry_wait(asked, attempt))
+                except (OSError, http.client.HTTPException) as err:
+                    if attempt == MAX_ATTEMPTS:
+                        raise RegistryUnavailableError(f"{host}: {err}") from err
+                    self._hold(turns, _retry_wait(None, attempt))
         raise AssertionError("the retry loop returns or raises on its last attempt")
 
-    def _space_arxiv(self, host: str) -> None:
-        if host != ARXIV_HOST:
-            return
-        wait = self._last_arxiv_request + ARXIV_INTERVAL_SECONDS - time.monotonic()
-        if wait > 0:
-            time.sleep(wait)
-        self._last_arxiv_request = time.monotonic()
+    def _turns(self, host: str) -> _HostTurns:
+        with self._lock:
+            return self._hosts.setdefault(host, _host_turns(host))
+
+    def _wait_turn(self, turns: _HostTurns) -> None:
+        with self._lock:
+            now = time.monotonic()
+            start = max(now, turns.next_start)
+            turns.next_start = start + turns.interval_seconds
+        if start > now:
+            time.sleep(start - now)
+
+    def _hold(self, turns: _HostTurns, wait_seconds: float) -> None:
+        with self._lock:
+            turns.next_start = max(turns.next_start, time.monotonic() + wait_seconds)
 
 
 def _get(url: str) -> bytes:
@@ -2085,35 +2129,42 @@ def _cache_path(sources: str) -> Path:
 def _check_all(
     sources: Sequence[CitedSource], fetch: Fetch
 ) -> tuple[list[Verification], int]:
-    """Check each source, printing each row as made.
+    """Check up to MAX_CONCURRENT_SOURCES sources at once, printing rows in order.
 
-    Returns the verifications made, which after a fault are those before it,
-    and the exit code.
+    A source not started by the time limit is reported unchecked. Returns the
+    verifications printed, which after a fault are those before it, and the
+    exit code.
     """
     verifications: list[Verification] = []
     retrieved = date.today()
     print(LOG_HEADER, flush=True)
     deadline = time.monotonic() + MAX_RUN_SECONDS
-    for source in sources:
-        try:
-            if time.monotonic() > deadline:
-                verification = unchecked(
-                    source,
-                    "",
-                    f"run time limit of {MAX_RUN_SECONDS:.0f} s reached; rerun",
-                )
-            else:
-                verification = verify(source, fetch)
-        except Exception as err:
-            # The process boundary: an unforeseen fault is reported once, and
-            # the rows already printed stay valid.
-            print(f"verify.py stopped at {source.key}: {err!r}", file=sys.stderr)
-            return verifications, 3
-        verifications.append(verification)
-        print(log_row(verification, retrieved), flush=True)
+    with ThreadPoolExecutor(MAX_CONCURRENT_SOURCES) as pool:
+        pending = [
+            pool.submit(_verify_before, deadline, source, fetch) for source in sources
+        ]
+        for source, future in zip(sources, pending, strict=True):
+            try:
+                verification = future.result()
+            except Exception as err:
+                # The process boundary: an unforeseen fault is reported once,
+                # and the rows already printed stay valid.
+                print(f"verify.py stopped at {source.key}: {err!r}", file=sys.stderr)
+                pool.shutdown(cancel_futures=True)
+                return verifications, 3
+            verifications.append(verification)
+            print(log_row(verification, retrieved), flush=True)
     print(f"\n{log_summary(verifications)}")
     all_verified = all(v.status is Status.VERIFIED for v in verifications)
     return verifications, 0 if all_verified else 1
+
+
+def _verify_before(deadline: float, source: CitedSource, fetch: Fetch) -> Verification:
+    if time.monotonic() > deadline:
+        return unchecked(
+            source, "", f"run time limit of {MAX_RUN_SECONDS:.0f} s reached; rerun"
+        )
+    return verify(source, fetch)
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:

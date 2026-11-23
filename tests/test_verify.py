@@ -2,10 +2,12 @@ import base64
 import email.message
 import http.client
 import io
+import itertools
 import json
 import os
 import stat
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -1180,6 +1182,7 @@ def network(monkeypatch: pytest.MonkeyPatch) -> FakeNetwork:
 
 CROSSREF_URL = "https://api.crossref.org/works/10.1000/x"
 ARXIV_URL = "https://export.arxiv.org/api/query?id_list=1706.03762"
+OPENALEX_URL = "https://api.openalex.org/works/doi:10.1000/x"
 
 
 def test_client_returns_none_for_not_found(network: FakeNetwork) -> None:
@@ -1202,6 +1205,12 @@ def test_client_caps_the_wait_a_registry_asks_for(network: FakeNetwork) -> None:
 def test_client_gives_up_after_the_last_attempt(network: FakeNetwork) -> None:
     network.answers = [http_error(503)] * verify_module.MAX_ATTEMPTS
     with pytest.raises(RegistryUnavailableError, match="HTTP 503"):
+        RegistryClient()(CROSSREF_URL)
+
+
+def test_client_gives_up_on_an_unreachable_registry(network: FakeNetwork) -> None:
+    network.answers = [OSError("unreachable")] * verify_module.MAX_ATTEMPTS
+    with pytest.raises(RegistryUnavailableError, match="unreachable"):
         RegistryClient()(CROSSREF_URL)
 
 
@@ -1228,6 +1237,114 @@ def test_client_spaces_arxiv_requests_but_not_others(network: FakeNetwork) -> No
     client(CROSSREF_URL)
     client(ARXIV_URL)
     assert network.slept == [verify_module.ARXIV_INTERVAL_SECONDS]
+
+
+def test_main_prints_rows_in_input_order_when_a_later_source_finishes_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    lines = [json.dumps(entry()), json.dumps(entry(key="Second", id="10.1000/second"))]
+    (tmp_path / "sources.jsonl").write_text(chr(10).join(lines), encoding="utf-8")
+    registry = doi_registry()
+    second_checked = threading.Event()
+
+    def fetch(url: str) -> bytes | None:
+        if "10.1000/second" in url and "api.openalex.org" in url:
+            second_checked.set()
+        elif "api.openalex.org" in url:
+            assert second_checked.wait(2), "the second source waited for the first"
+        return registry(url)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(verify_module, "RegistryClient", lambda: fetch)
+    assert main(["sources.jsonl"]) == 0
+    out = capsys.readouterr().out
+    assert out.index("| Feynman1982 |") < out.index("| Second |")
+
+
+class TimedNetwork:
+    """Stands in for urlopen across threads, recording when each URL was sent.
+
+    Intervals in these tests are far above the 16 ms tick of Windows' clock.
+    """
+
+    def __init__(self, seconds_per_request: float = 0.0) -> None:
+        self.seconds_per_request = seconds_per_request
+        self.sent: list[tuple[float, str]] = []
+        self.refusals: dict[str, urllib.error.HTTPError] = {}
+        self.refused = threading.Event()
+        self.active = 0
+        self.most_active = 0
+        self.lock = threading.Lock()
+
+    def urlopen(self, request: urllib.request.Request, timeout: float) -> io.BytesIO:
+        assert timeout > 0
+        with self.lock:
+            self.sent.append((time.monotonic(), request.full_url))
+            refusal = self.refusals.pop(request.full_url, None)
+            self.active += 1
+            self.most_active = max(self.most_active, self.active)
+        time.sleep(self.seconds_per_request)
+        with self.lock:
+            self.active -= 1
+        if refusal is not None:
+            self.refused.set()
+            raise refusal
+        return io.BytesIO(b"ok")
+
+
+def call_together(client: RegistryClient, urls: Sequence[str]) -> None:
+    start = threading.Barrier(len(urls))
+
+    def call(url: str) -> None:
+        start.wait()
+        client(url)
+
+    threads = [threading.Thread(target=call, args=(url,)) for url in urls]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+
+def test_client_keeps_arxiv_requests_apart_across_threads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    network = TimedNetwork()
+    monkeypatch.setattr(urllib.request, "urlopen", network.urlopen)
+    monkeypatch.setattr(verify_module, "ARXIV_INTERVAL_SECONDS", 0.2)
+    call_together(RegistryClient(), [f"{ARXIV_URL}{n}" for n in range(4)])
+    times = sorted(sent for sent, _ in network.sent)
+    assert min(later - earlier for earlier, later in itertools.pairwise(times)) > 0.15
+
+
+def test_client_sends_one_crossref_request_at_a_time_across_threads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    network = TimedNetwork(seconds_per_request=0.02)
+    monkeypatch.setattr(urllib.request, "urlopen", network.urlopen)
+    call_together(RegistryClient(), [f"{CROSSREF_URL}{n}" for n in range(4)])
+    assert len(network.sent) == 4
+    assert network.most_active == 1
+
+
+def test_client_holds_back_other_requests_to_a_host_that_asked_to_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    network = TimedNetwork()
+    refused = OPENALEX_URL + "1"
+    network.refusals[refused] = http_error(429, retry_after="1")
+    monkeypatch.setattr(urllib.request, "urlopen", network.urlopen)
+    monkeypatch.setattr(verify_module, "MAX_RETRY_WAIT_SECONDS", 0.5)
+    client = RegistryClient()
+    retrying = threading.Thread(target=client, args=(refused,))
+    retrying.start()
+    assert network.refused.wait(2)
+    # Long enough for the refusal to reach the client, well short of its wait.
+    time.sleep(0.05)
+    client(OPENALEX_URL + "2")
+    retrying.join()
+    refused_at = network.sent[0][0]
+    assert all(sent - refused_at > 0.4 for sent, _ in network.sent[1:])
 
 
 def test_main_exits_2_on_oversized_input(

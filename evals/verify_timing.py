@@ -26,7 +26,9 @@ EVALS = Path(__file__).resolve().parent
 VERIFY = EVALS.parent / "writing" / "scripts" / "verify.py"
 SOURCES = EVALS / "verify_timing.jsonl"
 SEQUENTIAL_SECONDS = 7.4
-BUDGET_RATIO = 0.6
+# Crossref's public pool answers one request at a time, about 0.29 s each, so
+# the fourteen DOIs here take 4.1 s however many other requests run alongside.
+BUDGET_RATIO = 0.7
 DEFAULT_RUNS = 3
 RUN_TIMEOUT_SECONDS = 600.0
 
