@@ -1214,6 +1214,49 @@ def test_client_gives_up_on_an_unreachable_registry(network: FakeNetwork) -> Non
         RegistryClient()(CROSSREF_URL)
 
 
+def test_client_gives_up_at_once_on_a_registry_out_of_budget_for_hours(
+    network: FakeNetwork,
+) -> None:
+    network.answers = [http_error(429, retry_after="28039"), b"never sent"]
+    with pytest.raises(RegistryUnavailableError, match="HTTP 429"):
+        RegistryClient()(CROSSREF_URL)
+    assert network.slept == []
+    assert len(network.urls) == 1
+
+
+def test_client_sends_the_openalex_key_to_openalex_alone(
+    network: FakeNetwork, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENALEX_API_KEY", "k3y/+")
+    network.answers = [b"a", b"b", b"c"]
+    client = RegistryClient()
+    client(OPENALEX_URL)
+    client(OPENALEX_URL.split("?")[0] + "?select=id")
+    client(CROSSREF_URL)
+    assert network.urls == [
+        OPENALEX_URL + "?api_key=k3y%2F%2B",
+        OPENALEX_URL.split("?")[0] + "?select=id&api_key=k3y%2F%2B",
+        CROSSREF_URL,
+    ]
+
+
+def test_client_sends_no_key_when_none_is_set(network: FakeNetwork) -> None:
+    network.answers = [b"a"]
+    RegistryClient()(OPENALEX_URL)
+    assert network.urls == [OPENALEX_URL]
+
+
+def test_cache_keeps_the_openalex_key_out_of_its_file(
+    network: FakeNetwork, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("OPENALEX_API_KEY", "secret-key")
+    network.answers = [b"a"]
+    cache = ResponseCache(RegistryClient(), tmp_path / "sources.cache.json")
+    cache(OPENALEX_URL)
+    cache.save()
+    assert "secret-key" not in (tmp_path / "sources.cache.json").read_text("utf-8")
+
+
 def test_client_does_not_retry_a_refused_request(network: FakeNetwork) -> None:
     network.answers = [http_error(400), b"never sent"]
     with pytest.raises(RegistryUnavailableError, match="HTTP 400"):

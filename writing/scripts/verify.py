@@ -92,6 +92,10 @@ REQUEST_TIMEOUT_SECONDS = 30.0
 MAX_ATTEMPTS = 3
 BACKOFF_BASE_SECONDS = 2.0
 MAX_RETRY_WAIT_SECONDS = 30.0
+# A registry that asks for an hour or more has spent its daily budget for this
+# client; waiting the capped time and asking again cannot help.
+OUT_OF_BUDGET_SECONDS = 3600
+OPENALEX_KEY_VARIABLE = "OPENALEX_API_KEY"
 # arXiv asks for one request every three seconds.
 ARXIV_INTERVAL_SECONDS = 3.0
 # Crossref's public pool takes one request at a time, five a second; OpenAlex
@@ -115,6 +119,7 @@ ARXIV_QUERY = "https://export.arxiv.org/api/query?id_list="
 ARXIV_ABS = "https://arxiv.org/abs/"
 ARXIV_HOST = "export.arxiv.org"
 CROSSREF_HOST = "api.crossref.org"
+OPENALEX_HOST = "api.openalex.org"
 ARXIV_DOI_PREFIX = "10.48550/arxiv."
 
 _HTTP_NOT_FOUND = 404
@@ -576,9 +581,10 @@ class RegistryClient:
 
     Each host gets the request rate and the number of requests at once that
     it allows, and a wait one answer asks for holds back every request to
-    that host. Returns the body, or None for HTTP 404. Raises
+    that host. OpenAlex requests carry the key in OPENALEX_KEY_VARIABLE when
+    it is set. Returns the body, or None for HTTP 404. Raises
     RegistryUnavailableError when the registry cannot answer within
-    MAX_ATTEMPTS.
+    MAX_ATTEMPTS, or asks for a wait of OUT_OF_BUDGET_SECONDS or more.
     """
 
     def __init__(self) -> None:
@@ -592,15 +598,19 @@ class RegistryClient:
             for attempt in range(1, MAX_ATTEMPTS + 1):
                 self._wait_turn(turns)
                 try:
-                    return _get(url)
+                    return _get(_with_key(url, host))
                 except urllib.error.HTTPError as err:
                     if err.code == _HTTP_NOT_FOUND:
                         return None
-                    if err.code not in _RETRYABLE_STATUSES or attempt == MAX_ATTEMPTS:
+                    asked = err.headers.get("Retry-After")
+                    if (
+                        err.code not in _RETRYABLE_STATUSES
+                        or attempt == MAX_ATTEMPTS
+                        or _is_out_of_budget(asked)
+                    ):
                         raise RegistryUnavailableError(
                             f"{host}: HTTP {err.code}"
                         ) from err
-                    asked = err.headers.get("Retry-After")
                     self._hold(turns, _retry_wait(asked, attempt))
                 except (OSError, http.client.HTTPException) as err:
                     if attempt == MAX_ATTEMPTS:
@@ -633,6 +643,25 @@ def _get(url: str) -> bytes:
     if len(body) > MAX_RESPONSE_BYTES:
         raise RegistryUnavailableError(f"response over {MAX_RESPONSE_BYTES} bytes")
     return body
+
+
+def _with_key(url: str, host: str) -> str:
+    """The URL to send: OpenAlex's with the key from the environment, if set.
+
+    The key is added only here, so cache entries, logs and error messages,
+    which all use the URL as built, never hold it.
+    """
+    key = os.environ.get(OPENALEX_KEY_VARIABLE, "").strip()
+    if host != OPENALEX_HOST or not key:
+        return url
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}api_key={urllib.parse.quote(key, safe='')}"
+
+
+def _is_out_of_budget(retry_after: str | None) -> bool:
+    if retry_after is None or not retry_after.strip().isdigit():
+        return False
+    return int(retry_after) >= OUT_OF_BUDGET_SECONDS
 
 
 def _retry_wait(retry_after: str | None, attempt: int) -> float:
