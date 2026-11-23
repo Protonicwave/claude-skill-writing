@@ -24,6 +24,8 @@ A reader who has not seen the notes can say yes or no after one reading, knowing
 
 Unless one is set: a recommendation email under 250 words, an options appraisal under 400. Cut background before any option's cost, and log the length chosen.
 
+A decision under 400 words gets three yes/no tests, no more, and a judgement log of the three choices the student is likeliest to reverse: a short text has few choices worth reversing, and each extra line is read before the decision.
+
 ## Example
 
 Buried:
