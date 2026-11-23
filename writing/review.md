@@ -6,15 +6,15 @@ The writer of a draft reads what they meant, not what they wrote. The checker an
 
 | Pass | Runs when | Reads | Who reads |
 |---|---|---|---|
-| Claim support | The draft cites sources and, where code runs, `verify.py --draft` reports no errors | The claim and quote pairs from the sources file | router-worker for more than three pairs; the main chat for three or fewer |
-| Cold reader | Reports, essays and applications over 400 words, and any explainer whatever its length | The draft and a one-paragraph description of its reader | router-scout |
-| Examiner | A rubric, marking scheme or person specification for the draft is in the working folder or the request, whatever the register | The draft and the rubric | router-expert |
+| Claim support | The draft cites sources and, where code runs, `verify.py --draft` reports no errors | The claim and quote pairs from the sources file | Sonnet for more than three pairs; the main chat for three or fewer |
+| Cold reader | Reports, essays and applications over 400 words, and any explainer whatever its length | The draft and a one-paragraph description of its reader | Haiku |
+| Examiner | A rubric, marking scheme or person specification for the draft is in the working folder or the request, whatever the register | The draft and the rubric | Opus |
 
-A subagent pays for its own starting context before it reads the draft, so a pass runs only where it can find more than it costs. Below 400 words the writer can hold a report section whole, and three pairs are quicker to judge in place than to brief. The cold reader runs on the smallest tier because it is meant to know less than the writer. Messages, lab book entries and posts skip claim support and the cold reader unless the student asks: they are short, and the student knows the reader. A lab book marked against a rubric still gets the examiner. Run the passes after the mechanical checks are clean and before delivery. They read different inputs and change nothing, so run them at once.
+Each subagent is a `general-purpose` agent with its model set on the call, so it runs wherever agents can start. A subagent pays for its own starting context before it reads the draft, so a pass runs only where it can find more than it costs. Below 400 words the writer can hold a report section whole, and three pairs are quicker to judge in place than to brief. The cold reader runs on the smallest model because it is meant to know less than the writer. Messages, lab book entries and posts skip claim support and the cold reader unless the student asks: they are short, and the student knows the reader. A lab book marked against a rubric still gets the examiner. Run the passes after the mechanical checks are clean and before delivery. They read different inputs and change nothing, so run them at once.
 
 ## The briefs
 
-Each brief follows the model-router template. Fill the angle-bracketed parts and leave the rest as written. None of them loads this skill: a reviewer who knows the rules reads the draft as a rule check, not as its reader.
+Fill the angle-bracketed parts and leave the rest as written. None of them loads this skill: a reviewer who knows the rules reads the draft as a rule check, not as its reader.
 
 ### Claim support
 
@@ -69,7 +69,7 @@ A reviewer's finding is evidence about the text. Settle each one once, as one of
 - **Keep** the text when the finding holds but the fix would cost more than it gains, such as a gloss the real reader does not need or a fix that cannot fit the limit.
 - **Reject** the finding when it is wrong: it quotes nothing in the draft, or the notes, the data or the rubric contradict it.
 
-Keep and reject each need a one-line reason, which goes in the judgement log when the student might reverse it. A finding put firmly is no more likely to be right: reject a wrong one however it is worded, because a writer who gives way to a confident reviewer copies the reviewer's mistakes into the text. The same holds for comments from a person that the student passes on: settle each, and hand none back as a question. If most of a pass's findings quote nothing in the draft, rerun it once on the next tier (`model-router` covers escalation).
+Keep and reject each need a one-line reason, which goes in the judgement log when the student might reverse it. A finding put firmly is no more likely to be right: reject a wrong one however it is worded, because a writer who gives way to a confident reviewer copies the reviewer's mistakes into the text. The same holds for comments from a person that the student passes on: settle each, and hand none back as a question. If most of a pass's findings quote nothing in the draft, rerun it once on the next model up, Haiku to Sonnet or Sonnet to Opus.
 
 - **Overstated claim.** Rewrite the claim down to what the quote establishes. Where the stronger wording is what the draft needs, find a passage that supports it, add it to the sources file and rerun `verify.py`. Never stretch a quote, and never move a claim to a different source because it reads better.
 - **Unsupported claim.** Mark it `[CLAIM NOT CHECKED: reason]`, or drop it if the argument stands without it. Tell the student which it was.
@@ -78,7 +78,7 @@ Keep and reject each need a one-line reason, which goes in the judgement log whe
 - **An examiner's change that needs no new information.** Make it.
 - **An examiner's change that needs data, results or sources the student has not supplied.** Do not invent them to reach a band. Add `[DATA NEEDED: what]` where the gap is, or list the change in the delivery note for the student.
 
-Fixes tend to add words: a gloss, a qualifier, a step of reasoning. Pay for them by cutting elsewhere. Count the words again: the draft must end within any limit the request or rubric sets, and without one, no more than a tenth longer than before the passes. A fix that cannot fit is kept out, and the judgement log says so. After the changes, run the check command in `SKILL.md` again with the same `--max-words` and `--inputs`, so a fix that pushed the draft past its limit or added a number shows, and, if the citations changed, `verify.py --draft`. Every loop stops: each pass runs once per draft, and again only for the pass whose finding made the draft restructure; escalation goes up one tier, once; a settled finding is not reopened. Once the findings are settled, deliver: another reread with nothing to look for changes more that was right than wrong.
+Fixes tend to add words: a gloss, a qualifier, a step of reasoning. Pay for them by cutting elsewhere. Count the words again: the draft must end within any limit the request or rubric sets, and without one, no more than a tenth longer than before the passes. A fix that cannot fit is kept out, and the judgement log says so. After the changes, run the check command in `SKILL.md` again with the same `--max-words` and `--inputs`, so a fix that pushed the draft past its limit or added a number shows, and, if the citations changed, `verify.py --draft`. Every loop stops: each pass runs once per draft, and again only for the pass whose finding made the draft restructure; escalation goes up one model, once; a settled finding is not reopened. Once the findings are settled, deliver: another reread with nothing to look for changes more that was right than wrong.
 
 ## Without subagents
 
