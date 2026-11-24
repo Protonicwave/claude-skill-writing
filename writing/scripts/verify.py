@@ -559,7 +559,7 @@ class RegistryUnavailableError(Exception):
     """A registry could not answer: rate limited, down, unreachable or oversized."""
 
 
-class _HostTurns:
+class _HostLimits:
     """When the next request to one host may start, and how many may run at once."""
 
     def __init__(self, concurrent: int, interval_seconds: float) -> None:
@@ -568,12 +568,12 @@ class _HostTurns:
         self.next_start = -math.inf
 
 
-def _host_turns(host: str) -> _HostTurns:
+def _host_limits(host: str) -> _HostLimits:
     if host == ARXIV_HOST:
-        return _HostTurns(1, ARXIV_INTERVAL_SECONDS)
+        return _HostLimits(1, ARXIV_INTERVAL_SECONDS)
     if host == CROSSREF_HOST:
-        return _HostTurns(1, CROSSREF_INTERVAL_SECONDS)
-    return _HostTurns(MAX_CONCURRENT_SOURCES, OTHER_HOST_INTERVAL_SECONDS)
+        return _HostLimits(1, CROSSREF_INTERVAL_SECONDS)
+    return _HostLimits(MAX_CONCURRENT_SOURCES, OTHER_HOST_INTERVAL_SECONDS)
 
 
 class RegistryClient:
@@ -589,14 +589,14 @@ class RegistryClient:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._hosts: dict[str, _HostTurns] = {}
+        self._hosts: dict[str, _HostLimits] = {}
 
     def __call__(self, url: str) -> bytes | None:
         host = urllib.parse.urlsplit(url).hostname or url
-        turns = self._turns(host)
-        with turns.slots:
+        limits = self._limits(host)
+        with limits.slots:
             for attempt in range(1, MAX_ATTEMPTS + 1):
-                self._wait_turn(turns)
+                self._wait_turn(limits)
                 try:
                     return _get(_with_key(url, host))
                 except urllib.error.HTTPError as err:
@@ -611,28 +611,28 @@ class RegistryClient:
                         raise RegistryUnavailableError(
                             f"{host}: HTTP {err.code}"
                         ) from err
-                    self._hold(turns, _retry_wait(asked, attempt))
+                    self._hold(limits, _retry_wait(asked, attempt))
                 except (OSError, http.client.HTTPException) as err:
                     if attempt == MAX_ATTEMPTS:
                         raise RegistryUnavailableError(f"{host}: {err}") from err
-                    self._hold(turns, _retry_wait(None, attempt))
+                    self._hold(limits, _retry_wait(None, attempt))
         raise AssertionError("the retry loop returns or raises on its last attempt")
 
-    def _turns(self, host: str) -> _HostTurns:
+    def _limits(self, host: str) -> _HostLimits:
         with self._lock:
-            return self._hosts.setdefault(host, _host_turns(host))
+            return self._hosts.setdefault(host, _host_limits(host))
 
-    def _wait_turn(self, turns: _HostTurns) -> None:
+    def _wait_turn(self, limits: _HostLimits) -> None:
         with self._lock:
             now = time.monotonic()
-            start = max(now, turns.next_start)
-            turns.next_start = start + turns.interval_seconds
+            start = max(now, limits.next_start)
+            limits.next_start = start + limits.interval_seconds
         if start > now:
             time.sleep(start - now)
 
-    def _hold(self, turns: _HostTurns, wait_seconds: float) -> None:
+    def _hold(self, limits: _HostLimits, wait_seconds: float) -> None:
         with self._lock:
-            turns.next_start = max(turns.next_start, time.monotonic() + wait_seconds)
+            limits.next_start = max(limits.next_start, time.monotonic() + wait_seconds)
 
 
 def _get(url: str) -> bytes:
@@ -2170,7 +2170,8 @@ def _check_all(
     deadline = time.monotonic() + MAX_RUN_SECONDS
     with ThreadPoolExecutor(MAX_CONCURRENT_SOURCES) as pool:
         pending = [
-            pool.submit(_verify_before, deadline, source, fetch) for source in sources
+            pool.submit(_verify_unless_late, deadline, source, fetch)
+            for source in sources
         ]
         for source, future in zip(sources, pending, strict=True):
             try:
@@ -2192,7 +2193,9 @@ def _check_all(
     return verifications, 0 if all_verified else 1
 
 
-def _verify_before(deadline: float, source: CitedSource, fetch: Fetch) -> Verification:
+def _verify_unless_late(
+    deadline: float, source: CitedSource, fetch: Fetch
+) -> Verification:
     if time.monotonic() > deadline:
         return unchecked(
             source, "", f"run time limit of {MAX_RUN_SECONDS:.0f} s reached; rerun"
