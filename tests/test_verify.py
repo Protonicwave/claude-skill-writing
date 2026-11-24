@@ -1304,6 +1304,35 @@ def test_main_prints_rows_in_input_order_when_a_later_source_finishes_first(
     assert out.index("| Feynman1982 |") < out.index("| Second |")
 
 
+def test_main_stops_queued_sources_when_interrupted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ids = [f"10.1000/s{number}" for number in range(12)]
+    lines = [
+        json.dumps(entry(key=f"S{number}", id=doi)) for number, doi in enumerate(ids)
+    ]
+    (tmp_path / "sources.jsonl").write_text(chr(10).join(lines), encoding="utf-8")
+    registry = doi_registry()
+    fetched: set[str] = set()
+    lock = threading.Lock()
+
+    def fetch(url: str) -> bytes | None:
+        doi = next(doi for doi in ids if doi in url)
+        with lock:
+            fetched.add(doi)
+        if doi == ids[0]:
+            raise KeyboardInterrupt
+        time.sleep(0.2)
+        return registry(url)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(verify_module, "RegistryClient", lambda: fetch)
+    with pytest.raises(KeyboardInterrupt):
+        main(["sources.jsonl"])
+    # The worker freed by the interrupt may start one more before the cancel.
+    assert len(fetched) <= verify_module.MAX_CONCURRENT_SOURCES + 1
+
+
 def test_main_rejects_two_sources_with_one_doi_before_fetching(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

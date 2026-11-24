@@ -2181,6 +2181,10 @@ def _check_all(
                 print(f"verify.py stopped at {source.key}: {err!r}", file=sys.stderr)
                 pool.shutdown(cancel_futures=True)
                 return verifications, 3
+            except BaseException:
+                # An interrupt must not wait for the queued sources to be fetched.
+                pool.shutdown(cancel_futures=True)
+                raise
             verifications.append(verification)
             print(log_row(verification, retrieved), flush=True)
     print(f"\n{log_summary(verifications)}")
