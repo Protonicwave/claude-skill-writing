@@ -1304,6 +1304,19 @@ def test_main_prints_rows_in_input_order_when_a_later_source_finishes_first(
     assert out.index("| Feynman1982 |") < out.index("| Second |")
 
 
+def test_main_rejects_two_sources_with_one_doi_before_fetching(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    lines = [json.dumps(entry()), json.dumps(entry(key="Again"))]
+    (tmp_path / "sources.jsonl").write_text(chr(10).join(lines), encoding="utf-8")
+    registry = doi_registry()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(verify_module, "RegistryClient", lambda: registry)
+    assert main(["sources.jsonl"]) == 2
+    assert registry.requested == []
+    assert "also cited as Feynman1982" in capsys.readouterr().err
+
+
 class TimedNetwork:
     """Stands in for urlopen across threads, recording when each URL was sent.
 
