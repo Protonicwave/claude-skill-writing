@@ -1202,6 +1202,14 @@ def test_client_caps_the_wait_a_registry_asks_for(network: FakeNetwork) -> None:
     assert network.slept == [verify_module.MAX_RETRY_WAIT_SECONDS]
 
 
+def test_client_backs_off_when_the_wait_asked_for_is_not_a_number(
+    network: FakeNetwork,
+) -> None:
+    network.answers = [http_error(429, retry_after="²"), b"ok"]
+    assert RegistryClient()(CROSSREF_URL) == b"ok"
+    assert network.slept == [verify_module.BACKOFF_BASE_SECONDS]
+
+
 def test_client_gives_up_after_the_last_attempt(network: FakeNetwork) -> None:
     network.answers = [http_error(503)] * verify_module.MAX_ATTEMPTS
     with pytest.raises(RegistryUnavailableError, match="HTTP 503"):

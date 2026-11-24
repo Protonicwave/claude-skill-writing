@@ -602,11 +602,11 @@ class RegistryClient:
                 except urllib.error.HTTPError as err:
                     if err.code == _HTTP_NOT_FOUND:
                         return None
-                    asked = err.headers.get("Retry-After")
+                    asked = _retry_after_seconds(err.headers.get("Retry-After"))
                     if (
                         err.code not in _RETRYABLE_STATUSES
                         or attempt == MAX_ATTEMPTS
-                        or _is_out_of_budget(asked)
+                        or (asked is not None and asked >= OUT_OF_BUDGET_SECONDS)
                     ):
                         raise RegistryUnavailableError(
                             f"{host}: HTTP {err.code}"
@@ -658,15 +658,15 @@ def _with_key(url: str, host: str) -> str:
     return f"{url}{separator}api_key={urllib.parse.quote(key, safe='')}"
 
 
-def _is_out_of_budget(retry_after: str | None) -> bool:
-    if retry_after is None or not retry_after.strip().isdigit():
-        return False
-    return int(retry_after) >= OUT_OF_BUDGET_SECONDS
+def _retry_after_seconds(header: str | None) -> int | None:
+    """The whole seconds a Retry-After header asks for; None for a date or junk."""
+    text = (header or "").strip()
+    return int(text) if text.isascii() and text.isdigit() else None
 
 
-def _retry_wait(retry_after: str | None, attempt: int) -> float:
-    if retry_after is not None and retry_after.strip().isdigit():
-        return min(float(retry_after), MAX_RETRY_WAIT_SECONDS)
+def _retry_wait(asked_seconds: int | None, attempt: int) -> float:
+    if asked_seconds is not None:
+        return min(float(asked_seconds), MAX_RETRY_WAIT_SECONDS)
     return min(BACKOFF_BASE_SECONDS**attempt, MAX_RETRY_WAIT_SECONDS)
 
 
