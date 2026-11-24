@@ -58,8 +58,8 @@
         "cited-paragraph": {
           "total": 7,
           "with_skill": {
-            "passed": 7.0,
-            "spend_usd": 1.2744
+            "passed": 7,
+            "spend_usd": 0.8313
           },
           "without_skill": {
             "passed": 5.5,
@@ -70,7 +70,7 @@
           "total": 6,
           "with_skill": {
             "passed": 6,
-            "spend_usd": 0.4214
+            "spend_usd": 0.4728
           },
           "without_skill": {
             "passed": 5,
@@ -80,8 +80,8 @@
         "data-gap": {
           "total": 8,
           "with_skill": {
-            "passed": 7,
-            "spend_usd": 0.3632
+            "passed": 8,
+            "spend_usd": 0.2675
           },
           "without_skill": {
             "passed": 6,
@@ -91,8 +91,8 @@
         "lay-summary-limit": {
           "total": 7,
           "with_skill": {
-            "passed": 7,
-            "spend_usd": 0.5915
+            "passed": 6,
+            "spend_usd": 0.5118
           },
           "without_skill": {
             "passed": 4,
@@ -103,7 +103,7 @@
           "total": 7,
           "with_skill": {
             "passed": 7,
-            "spend_usd": 0.3732
+            "spend_usd": 0.2511
           },
           "without_skill": {
             "passed": 7,
@@ -114,7 +114,7 @@
           "total": 7,
           "with_skill": {
             "passed": 7,
-            "spend_usd": 0.2845
+            "spend_usd": 0.1819
           },
           "without_skill": {
             "passed": 5,
@@ -125,7 +125,7 @@
           "total": 6,
           "with_skill": {
             "passed": 6,
-            "spend_usd": 0.2418
+            "spend_usd": 0.2087
           },
           "without_skill": {
             "passed": 6,
@@ -136,7 +136,7 @@
           "total": 7,
           "with_skill": {
             "passed": 7,
-            "spend_usd": 0.3952
+            "spend_usd": 0.3216
           },
           "without_skill": {
             "passed": 6,
@@ -147,7 +147,7 @@
           "total": 9,
           "with_skill": {
             "passed": 9,
-            "spend_usd": 0.2784
+            "spend_usd": 0.285
           },
           "without_skill": {
             "passed": 8,
@@ -157,8 +157,8 @@
         "literature-review": {
           "total": 8,
           "with_skill": {
-            "passed": 8.0,
-            "spend_usd": 2.7564
+            "passed": 8,
+            "spend_usd": 1.7051
           },
           "without_skill": {
             "passed": 6.5,
@@ -168,8 +168,8 @@
         "rubric-methods": {
           "total": 8,
           "with_skill": {
-            "passed": 7.0,
-            "spend_usd": 1.347
+            "passed": 8,
+            "spend_usd": 0.7418
           },
           "without_skill": {
             "passed": 6.5,
@@ -179,8 +179,8 @@
         "voice-match": {
           "total": 7,
           "with_skill": {
-            "passed": 7,
-            "spend_usd": 0.2658
+            "passed": 6,
+            "spend_usd": 0.2458
           },
           "without_skill": {
             "passed": 6,
@@ -191,7 +191,7 @@
           "total": 5,
           "with_skill": {
             "passed": 5,
-            "spend_usd": 0.739
+            "spend_usd": 0.6298
           },
           "without_skill": {
             "passed": 5,
@@ -202,7 +202,7 @@
           "total": 7,
           "with_skill": {
             "passed": 7,
-            "spend_usd": 0.504
+            "spend_usd": 0.2407
           },
           "without_skill": {
             "passed": 7,
@@ -213,7 +213,7 @@
           "total": 6,
           "with_skill": {
             "passed": 6,
-            "spend_usd": 0.4172
+            "spend_usd": 0.2709
           },
           "without_skill": {
             "passed": 5,
@@ -224,7 +224,7 @@
           "total": 6,
           "with_skill": {
             "passed": 6,
-            "spend_usd": 0.1549
+            "spend_usd": 0.1398
           },
           "without_skill": {
             "passed": 5,
@@ -235,7 +235,7 @@
           "total": 5,
           "with_skill": {
             "passed": 5,
-            "spend_usd": 0.7365
+            "spend_usd": 0.5952
           },
           "without_skill": {
             "passed": 5,
@@ -245,8 +245,8 @@
         "recommendation-email": {
           "total": 7,
           "with_skill": {
-            "passed": 5,
-            "spend_usd": 0.3896
+            "passed": 7,
+            "spend_usd": 0.3257
           },
           "without_skill": {
             "passed": 5,
@@ -257,7 +257,7 @@
           "total": 7,
           "with_skill": {
             "passed": 7,
-            "spend_usd": 0.4289
+            "spend_usd": 0.3477
           },
           "without_skill": {
             "passed": 7,
@@ -267,8 +267,8 @@
         "options-appraisal": {
           "total": 6,
           "with_skill": {
-            "passed": 5,
-            "spend_usd": 0.972
+            "passed": 6,
+            "spend_usd": 0.4109
           },
           "without_skill": {
             "passed": 5,
@@ -279,7 +279,7 @@
           "total": 8,
           "with_skill": {
             "passed": 8,
-            "spend_usd": 1.267
+            "spend_usd": 1.1497
           },
           "without_skill": {
             "passed": 7,
@@ -290,7 +290,7 @@
           "total": 8,
           "with_skill": {
             "passed": 8,
-            "spend_usd": 0.9271
+            "spend_usd": 0.7478
           },
           "without_skill": {
             "passed": 6,
@@ -320,8 +320,8 @@
         "cited-paragraph": {
           "total": 7,
           "with_skill": {
-            "passed": 6.5,
-            "spend_usd": 0.1939
+            "passed": 7,
+            "spend_usd": 0.2836
           },
           "without_skill": {
             "passed": 5.0,
@@ -332,7 +332,7 @@
           "total": 6,
           "with_skill": {
             "passed": 6,
-            "spend_usd": 0.192
+            "spend_usd": 0.1241
           },
           "without_skill": {
             "passed": 5,
@@ -343,7 +343,7 @@
           "total": 8,
           "with_skill": {
             "passed": 8,
-            "spend_usd": 0.0966
+            "spend_usd": 0.1191
           },
           "without_skill": {
             "passed": 7,
@@ -354,7 +354,7 @@
           "total": 7,
           "with_skill": {
             "passed": 5,
-            "spend_usd": 0.1278
+            "spend_usd": 0.1819
           },
           "without_skill": {
             "passed": 4,
@@ -365,7 +365,7 @@
           "total": 7,
           "with_skill": {
             "passed": 7,
-            "spend_usd": 0.1139
+            "spend_usd": 0.1006
           },
           "without_skill": {
             "passed": 7,
@@ -376,7 +376,7 @@
           "total": 7,
           "with_skill": {
             "passed": 7,
-            "spend_usd": 0.1029
+            "spend_usd": 0.089
           },
           "without_skill": {
             "passed": 7,
@@ -387,7 +387,7 @@
           "total": 6,
           "with_skill": {
             "passed": 6,
-            "spend_usd": 0.1077
+            "spend_usd": 0.0872
           },
           "without_skill": {
             "passed": 4,
@@ -398,7 +398,7 @@
           "total": 7,
           "with_skill": {
             "passed": 7,
-            "spend_usd": 0.1177
+            "spend_usd": 0.1379
           },
           "without_skill": {
             "passed": 6,
@@ -408,8 +408,8 @@
         "linkedin-post": {
           "total": 9,
           "with_skill": {
-            "passed": 9,
-            "spend_usd": 0.1581
+            "passed": 8,
+            "spend_usd": 0.1066
           },
           "without_skill": {
             "passed": 9,
@@ -419,8 +419,8 @@
         "literature-review": {
           "total": 8,
           "with_skill": {
-            "passed": 7.0,
-            "spend_usd": 0.2951
+            "passed": 8,
+            "spend_usd": 0.523
           },
           "without_skill": {
             "passed": 5.0,
@@ -430,8 +430,8 @@
         "rubric-methods": {
           "total": 8,
           "with_skill": {
-            "passed": 7.0,
-            "spend_usd": 0.1185
+            "passed": 8,
+            "spend_usd": 0.3262
           },
           "without_skill": {
             "passed": 7.0,
@@ -442,7 +442,7 @@
           "total": 7,
           "with_skill": {
             "passed": 6,
-            "spend_usd": 0.1039
+            "spend_usd": 0.1067
           },
           "without_skill": {
             "passed": 7,
@@ -453,7 +453,7 @@
           "total": 5,
           "with_skill": {
             "passed": 5,
-            "spend_usd": 0.1619
+            "spend_usd": 0.1751
           },
           "without_skill": {
             "passed": 4,
@@ -464,7 +464,7 @@
           "total": 7,
           "with_skill": {
             "passed": 7,
-            "spend_usd": 0.1234
+            "spend_usd": 0.1194
           },
           "without_skill": {
             "passed": 7,
@@ -474,8 +474,8 @@
         "newsletter-defaults": {
           "total": 6,
           "with_skill": {
-            "passed": 5,
-            "spend_usd": 0.1076
+            "passed": 6,
+            "spend_usd": 0.1111
           },
           "without_skill": {
             "passed": 4,
@@ -486,7 +486,7 @@
           "total": 6,
           "with_skill": {
             "passed": 5,
-            "spend_usd": 0.0758
+            "spend_usd": 0.0661
           },
           "without_skill": {
             "passed": 5,
@@ -497,7 +497,7 @@
           "total": 5,
           "with_skill": {
             "passed": 5,
-            "spend_usd": 0.1175
+            "spend_usd": 0.3282
           },
           "without_skill": {
             "passed": 5,
@@ -507,8 +507,8 @@
         "recommendation-email": {
           "total": 7,
           "with_skill": {
-            "passed": 5,
-            "spend_usd": 0.1206
+            "passed": 7,
+            "spend_usd": 0.1139
           },
           "without_skill": {
             "passed": 5,
@@ -519,7 +519,7 @@
           "total": 7,
           "with_skill": {
             "passed": 7,
-            "spend_usd": 0.1103
+            "spend_usd": 0.1212
           },
           "without_skill": {
             "passed": 6,
@@ -530,7 +530,7 @@
           "total": 6,
           "with_skill": {
             "passed": 6,
-            "spend_usd": 0.1052
+            "spend_usd": 0.1251
           },
           "without_skill": {
             "passed": 5,
@@ -540,8 +540,8 @@
         "related-work-search": {
           "total": 8,
           "with_skill": {
-            "passed": 7,
-            "spend_usd": 0.4436
+            "passed": 8,
+            "spend_usd": 0.5331
           },
           "without_skill": {
             "passed": 5,
@@ -552,7 +552,7 @@
           "total": 8,
           "with_skill": {
             "passed": 8,
-            "spend_usd": 0.253
+            "spend_usd": 0.2707
           },
           "without_skill": {
             "passed": 4,
