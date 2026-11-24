@@ -16,6 +16,7 @@ minutes apart.
 """
 
 import argparse
+import math
 import subprocess
 import sys
 import time
@@ -61,7 +62,7 @@ def _positive(text: str) -> float:
         value = float(text)
     except ValueError:
         raise argparse.ArgumentTypeError(f"expected a number, got {text!r}") from None
-    if not value > 0:
+    if not math.isfinite(value) or value <= 0:
         raise argparse.ArgumentTypeError(f"expected a positive number, got {text!r}")
     return value
 

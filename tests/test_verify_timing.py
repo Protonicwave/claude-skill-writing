@@ -91,6 +91,7 @@ def test_exits_2_when_a_run_passes_its_time_limit(
         ["--runs", "two"],
         ["--max-seconds", "0"],
         ["--max-seconds", "x"],
+        ["--max-seconds", "inf"],
     ],
 )
 def test_rejects_a_bad_run_count_or_budget(argv: list[str]) -> None:
