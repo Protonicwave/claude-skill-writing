@@ -36,9 +36,9 @@ Never open a script's source. After spawning a subagent, end the turn: it report
 
 Decide every choice about the text and log it, including how each finding or forwarded comment is settled: a question costs the student a round trip, a logged choice one line to reverse.
 
-- Never decide a fact only the student has, such as a result, date or name: mark it. Never send or publish.
-- Never ask. When one draft cannot serve two readings (a lay summary or a technical abstract), write the likelier and name the other first in the notes.
-- Settle reader, length, format, tone, deadline, scope: each is given, defaulted and logged, or marked.
+- Never decide a fact only the student has, such as a result or date: mark it. Never send or publish.
+- Never ask. When one draft cannot serve two readings, write the likelier and name the other first in the notes.
+- Settle reader, length (default paragraph: at most 250 words), format, tone, deadline, scope: each is given, defaulted and logged, or marked.
 - Before drafting, write three to six yes/no tests from the request, rubric and notes ("Does the opening give the value with its uncertainty?"), and give them to the examiner: specific tests catch what rereading misses.
 - The notes end with a judgement log of choices the student might reverse, each with its reason and how to change it. A literal edit gets one or two sentences and no log.
 

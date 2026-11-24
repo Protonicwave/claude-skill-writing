@@ -176,3 +176,39 @@ def test_hides_deep_research_runs_and_maps_their_grades_back(tmp_path: Path) -> 
             (iteration / "opus" / "data-gap" / arm / "grading.json").read_text("utf-8")
         )
         assert grading["expectations"][0]["text"] == f"text of {arm}"
+
+
+def test_hides_skill_arms_named_for_a_variant_and_maps_their_grades_back(
+    tmp_path: Path,
+) -> None:
+    iteration = write_iteration(tmp_path)
+    arms = ("with_skill_medium", "with_skill_high-2")
+    for arm in arms:
+        outputs = iteration / "opus" / "data-gap" / arm / "outputs"
+        outputs.mkdir(parents=True)
+        (outputs / "deliverable.md").write_text(f"text of {arm}", encoding="utf-8")
+    key = tmp_path / "key.json"
+    assert hide(iteration, key) == 0
+    copies = blind_runs(iteration)
+    assert len(copies) == len(RUNS) + len(arms)
+    for copy in copies:
+        for word in ("medium", "high"):
+            assert word not in copy.name
+        text = (copy / "deliverable.md").read_text(encoding="utf-8")
+        grading = {"expectations": [{"text": text, "passed": True, "evidence": "e"}]}
+        (copy / "grading.json").write_text(json.dumps(grading), encoding="utf-8")
+    assert reveal(iteration, key) == 0
+    for arm in arms:
+        grading = json.loads(
+            (iteration / "opus" / "data-gap" / arm / "grading.json").read_text("utf-8")
+        )
+        assert grading["expectations"][0]["text"] == f"text of {arm}"
+
+
+def test_skips_an_arm_that_only_starts_like_a_skill_arm(tmp_path: Path) -> None:
+    iteration = write_iteration(tmp_path)
+    outputs = iteration / "opus" / "data-gap" / "with_skillful" / "outputs"
+    outputs.mkdir(parents=True)
+    (outputs / "deliverable.md").write_text("stray", encoding="utf-8")
+    assert hide(iteration, tmp_path / "key.json") == 0
+    assert len(blind_runs(iteration)) == len(RUNS)
